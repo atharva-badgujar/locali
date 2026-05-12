@@ -9,11 +9,12 @@ Locali turns a USB drive into a portable AI assistant powered by Google’s Gemm
 
 ```text
 USB drive
-├── Gemma model file         downloaded during setup
-├── llama.cpp server binary  downloaded during setup
-├── launcher script          start.sh / start.bat
-├── chat UI                  offline HTML interface
-└── config.json              model and runtime settings
+└── locali/
+    ├── Gemma model file         downloaded during setup
+    ├── llama.cpp server binary  downloaded during setup
+    ├── launcher script          start.sh / start.bat
+    ├── chat UI                  offline HTML interface
+    └── config.json              model and runtime settings
 
 Host machine contributes only: CPU + RAM
 Host machine stores:          nothing
@@ -49,7 +50,7 @@ If you are unsure, use 1B first. You can rerun setup later with `--model 4b`.
 
 There is no separate Locali release download required anymore. Use the files in this repository, then run the setup script for your operating system. The setup script will:
 
-- create the USB folder structure
+- create a top-level `locali` folder on the USB
 - download the llama.cpp server binary and its required support libraries on macOS
 - download the selected Gemma model
 - write `config.json` and launch files onto the USB
@@ -101,7 +102,7 @@ Replace `MYUSB` with the mounted USB folder name used by your system.
 
 The script checks your USB speed, downloads the required files, and prints a success message when everything is ready.
 
-Yes, this automatically downloads the Gemma model too. You do not need to fetch it manually.
+Yes, this automatically downloads the Gemma model too. If the model file already exists in `locali/models`, setup skips downloading it again.
 
 ## First Run
 
@@ -112,17 +113,17 @@ After setup is complete, safely eject the USB and use it on any supported machin
 Run:
 
 ```powershell
-E:\start.bat
+E:\locali\start.bat
 ```
 
-Or just double-click `start.bat` from File Explorer on the USB drive.
+Or just double-click `locali\start.bat` from File Explorer on the USB drive.
 
 ### macOS
 
 Run:
 
 ```bash
-cd /Volumes/MYUSB
+cd /Volumes/MYUSB/locali
 ./start.sh
 ```
 
@@ -131,7 +132,7 @@ cd /Volumes/MYUSB
 Run:
 
 ```bash
-cd /media/$USER/MYUSB
+cd /media/$USER/MYUSB/locali
 ./start.sh
 ```
 
@@ -146,7 +147,7 @@ Press `Ctrl+C` in the terminal to stop the server.
 ## What Happens At Runtime
 
 ```text
-start.sh / start.bat
+locali/start.sh / locali/start.bat
   ├─ detects the operating system
   ├─ loads config.json from the USB drive
   ├─ starts the bundled llama.cpp server
@@ -163,26 +164,27 @@ After setup, the USB should look like this:
 
 ```text
 YOUR_USB_DRIVE/
-├── start.bat
-├── start.sh
-├── setup/
-│   ├── setup_windows.ps1
-│   └── setup_unix.sh
-├── launcher/
-│   └── launch.py
-├── bin/
-│   ├── windows/
-│   ├── linux/
-│   └── mac/
-├── models/
-├── ui/
-│   └── index.html
-└── config.json
+└── locali/
+    ├── start.bat
+    ├── start.sh
+    ├── setup/
+    │   ├── setup_windows.ps1
+    │   └── setup_unix.sh
+    ├── launcher/
+    │   └── launch.py
+    ├── bin/
+    │   ├── windows/
+    │   ├── linux/
+    │   └── mac/
+    ├── models/
+    ├── ui/
+    │   └── index.html
+    └── config.json
 ```
 
 ## Configuration
 
-Edit `config.json` on the USB to change model and runtime settings.
+Edit `locali/config.json` on the USB to change model and runtime settings.
 
 ```json
 {
@@ -209,9 +211,9 @@ Edit `config.json` on the USB to change model and runtime settings.
 ## Troubleshooting
 
 - Model loading is slow: use a USB 3.x port, not USB 2.0.
-- Port already in use: change `port` in `config.json` and rerun `start.sh` or `start.bat`.
+- Port already in use: change `port` in `locali/config.json` and rerun `locali/start.sh` or `locali/start.bat`.
 - Out of memory: close other apps or switch to the 1B model.
-- macOS security warning: clear quarantine on the mac binary with `xattr -d com.apple.quarantine /Volumes/MYUSB/bin/mac/llama-server`.
+- macOS security warning: clear quarantine on the mac binary with `xattr -d com.apple.quarantine /Volumes/MYUSB/locali/bin/mac/llama-server`.
 - Windows antivirus warning: compiled ML binaries can trigger false positives; add an exclusion or build from source.
 - Connection failed in the browser: wait for the first load to finish and refresh.
 

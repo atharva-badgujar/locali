@@ -43,8 +43,10 @@ done
 [[ -z "$DRIVE" ]] && err "USB drive path required. Example: --drive /media/user/MYUSB"
 [[ "$MODEL" != "1b" && "$MODEL" != "4b" ]] && err "Model must be '1b' or '4b'"
 
+INSTALL_ROOT="$DRIVE/locali"
+
 print_banner
-echo -e "  ${BOLD}Linux/macOS Setup  |  Model: Gemma 3 ${MODEL}  |  Target: ${DRIVE}${NC}\n"
+echo -e "  ${BOLD}Linux/macOS Setup  |  Model: Gemma 3 ${MODEL}  |  Target: ${INSTALL_ROOT}${NC}\n"
 
 # --- Detect OS ---
 OS="linux"
@@ -95,8 +97,8 @@ fi
 # --- Create Directories ---
 echo -e "\n${BOLD}[ 3/6 ] Creating directory structure on USB...${NC}"
 
-for dir in launcher "bin/windows" "bin/linux" "bin/mac" models ui docs; do
-    mkdir -p "$DRIVE/$dir"
+for dir in launcher "bin/windows" "bin/linux" "bin/mac" models ui docs setup; do
+    mkdir -p "$INSTALL_ROOT/$dir"
 done
 ok "Directories created"
 
@@ -144,19 +146,28 @@ if [[ -z "$BINARY" ]]; then
 fi
 
 if [[ "$OS" == "mac" ]]; then
-    cp "$BINARY" "$DRIVE/bin/mac/llama-server"
-    chmod +x "$DRIVE/bin/mac/llama-server"
-    # Copy bundled shared libraries that the macOS binary links against.
-    find "$TMP_DIR/extracted" -name "*.dylib" -type f -exec cp {} "$DRIVE/bin/mac/" \;
-    # Remove macOS quarantine to prevent "cannot be opened" errors
-    xattr -d com.apple.quarantine "$DRIVE/bin/mac/llama-server" 2>/dev/null || true
+    if [[ -x "$INSTALL_ROOT/bin/mac/llama-server" ]] && compgen -G "$INSTALL_ROOT/bin/mac/*.dylib" > /dev/null; then
+        ok "llama.cpp engine already installed"
+    else
+        cp "$BINARY" "$INSTALL_ROOT/bin/mac/llama-server"
+        chmod +x "$INSTALL_ROOT/bin/mac/llama-server"
+        # Copy bundled shared libraries that the macOS binary links against.
+        find "$TMP_DIR/extracted" -name "*.dylib" -type f -exec cp {} "$INSTALL_ROOT/bin/mac/" \;
+        # Remove macOS quarantine to prevent "cannot be opened" errors
+        xattr -d com.apple.quarantine "$INSTALL_ROOT/bin/mac/llama-server" 2>/dev/null || true
+        ok "llama.cpp engine installed"
+    fi
 else
-    cp "$BINARY" "$DRIVE/bin/linux/llama-server"
-    chmod +x "$DRIVE/bin/linux/llama-server"
+    if [[ -x "$INSTALL_ROOT/bin/linux/llama-server" ]]; then
+        ok "llama.cpp engine already installed"
+    else
+        cp "$BINARY" "$INSTALL_ROOT/bin/linux/llama-server"
+        chmod +x "$INSTALL_ROOT/bin/linux/llama-server"
+        ok "llama.cpp engine installed"
+    fi
 fi
 
 rm -rf "$TMP_DIR"
-ok "llama.cpp engine installed"
 
 # --- Download Gemma Model ---
 echo -e "\n${BOLD}[ 5/6 ] Downloading Gemma 3 ${MODEL} model (GGUF format)...${NC}"
@@ -171,14 +182,19 @@ fi
 
 info "Downloading: $MODEL_FILE"
 info "This may take a few minutes..."
-curl -L -o "$DRIVE/models/$MODEL_FILE" "$MODEL_URL" --progress-bar
-ok "Model downloaded: $MODEL_FILE"
+
+if [[ -f "$INSTALL_ROOT/models/$MODEL_FILE" ]]; then
+    ok "Model already installed: $MODEL_FILE"
+else
+    curl -L -o "$INSTALL_ROOT/models/$MODEL_FILE" "$MODEL_URL" --progress-bar
+    ok "Model downloaded: $MODEL_FILE"
+fi
 
 # --- Write Config and Scripts ---
 echo -e "\n${BOLD}[ 6/6 ] Writing config and launcher scripts...${NC}"
 
 # config.json
-cat > "$DRIVE/config.json" <<EOF
+cat > "$INSTALL_ROOT/config.json" <<EOF
 {
   "model": "$MODEL_FILE",
   "context_size": 2048,
@@ -190,15 +206,15 @@ cat > "$DRIVE/config.json" <<EOF
 }
 EOF
 
-# start.sh at root of USB
-cat > "$DRIVE/start.sh" <<'EOF'
+# start.sh in the Locali folder
+cat > "$INSTALL_ROOT/start.sh" <<'EOF'
 #!/usr/bin/env bash
 # Locali — quick launcher
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chmod +x "$SCRIPT_DIR/launcher/launch.py" 2>/dev/null || true
 python3 "$SCRIPT_DIR/launcher/launch.py" --root "$SCRIPT_DIR"
 EOF
-chmod +x "$DRIVE/start.sh"
+chmod +x "$INSTALL_ROOT/start.sh"
 
 ok "Config and launcher written"
 
@@ -206,12 +222,12 @@ ok "Config and launcher written"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ -f "$REPO_DIR/launcher/launch.py" ]]; then
-    cp "$REPO_DIR/launcher/launch.py" "$DRIVE/launcher/"
+    cp "$REPO_DIR/launcher/launch.py" "$INSTALL_ROOT/launcher/"
     ok "Launcher script copied"
 fi
 
 if [[ -f "$REPO_DIR/ui/index.html" ]]; then
-    cp "$REPO_DIR/ui/index.html" "$DRIVE/ui/"
+    cp "$REPO_DIR/ui/index.html" "$INSTALL_ROOT/ui/"
     ok "Chat UI copied"
 fi
 
@@ -223,8 +239,8 @@ cat << 'EOF'
   ║                                                      ║
   ║   ✅  Locali setup complete!                      ║
   ║                                                      ║
-  ║   To start on any Linux/macOS machine:               ║
-  ║   → Run: ./start.sh  from the USB drive              ║
+    ║   To start on any Linux/macOS machine:               ║
+    ║   → Run: ./locali/start.sh from the USB drive        ║
   ║                                                      ║
   ║   Then open:  http://localhost:8080                  ║
   ║                                                      ║

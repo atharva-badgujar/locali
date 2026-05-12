@@ -43,6 +43,8 @@ if (-not (Test-Path $drivePath)) {
     exit 1
 }
 
+$installRoot = Join-Path $drivePath "locali"
+
 $drive = Get-PSDrive -Name $drivePath.TrimEnd(':') -ErrorAction SilentlyContinue
 if ($null -eq $drive) {
     Write-Red "Cannot access drive '$USBDrive'."
@@ -86,9 +88,9 @@ if ($speedMBs -lt 20) {
 # --- Create Directory Structure ---
 Write-Header "[ 3/6 ] Creating directory structure on USB..."
 
-$dirs = @("launcher", "bin\windows", "bin\linux", "bin\mac", "models", "ui", "docs")
+$dirs = @("launcher", "bin\windows", "bin\linux", "bin\mac", "models", "ui", "docs", "setup")
 foreach ($dir in $dirs) {
-    $fullPath = Join-Path $drivePath $dir
+    $fullPath = Join-Path $installRoot $dir
     if (-not (Test-Path $fullPath)) {
         New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
     }
@@ -112,29 +114,36 @@ $llamaUrl = $asset.browser_download_url
 $llamaZip  = Join-Path $env:TEMP "llama_win.zip"
 $llamaDir  = Join-Path $env:TEMP "llama_win"
 
-Write-Info "Downloading from GitHub releases..."
-Invoke-WebRequest -Uri $llamaUrl -OutFile $llamaZip -UseBasicParsing
+$serverExePath = Join-Path $installRoot "bin\windows\llama-server.exe"
+$existingDll = Get-ChildItem -Path (Join-Path $installRoot "bin\windows") -Filter "*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
 
-Write-Info "Extracting..."
-if (Test-Path $llamaDir) { Remove-Item $llamaDir -Recurse -Force }
-Expand-Archive -Path $llamaZip -DestinationPath $llamaDir -Force
+if ((Test-Path $serverExePath) -and ($null -ne $existingDll)) {
+    Write-Green "llama.cpp engine already installed"
+} else {
+    Write-Info "Downloading from GitHub releases..."
+    Invoke-WebRequest -Uri $llamaUrl -OutFile $llamaZip -UseBasicParsing
 
-$serverExe = Get-ChildItem -Path $llamaDir -Filter "llama-server.exe" -Recurse | Select-Object -First 1
-if ($null -eq $serverExe) {
-    Write-Red "Could not find llama-server.exe in the downloaded package."
-    exit 1
+    Write-Info "Extracting..."
+    if (Test-Path $llamaDir) { Remove-Item $llamaDir -Recurse -Force }
+    Expand-Archive -Path $llamaZip -DestinationPath $llamaDir -Force
+
+    $serverExe = Get-ChildItem -Path $llamaDir -Filter "llama-server.exe" -Recurse | Select-Object -First 1
+    if ($null -eq $serverExe) {
+        Write-Red "Could not find llama-server.exe in the downloaded package."
+        exit 1
+    }
+
+    Copy-Item $serverExe.FullName -Destination $serverExePath -Force
+
+    # Copy required DLLs
+    Get-ChildItem -Path $serverExe.DirectoryName -Filter "*.dll" | ForEach-Object {
+        Copy-Item $_.FullName -Destination (Join-Path $installRoot "bin\windows\") -Force
+    }
+
+    Remove-Item $llamaZip -Force
+    Remove-Item $llamaDir -Recurse -Force
+    Write-Green "llama.cpp engine installed"
 }
-
-Copy-Item $serverExe.FullName -Destination (Join-Path $drivePath "bin\windows\llama-server.exe") -Force
-
-# Copy required DLLs
-Get-ChildItem -Path $serverExe.DirectoryName -Filter "*.dll" | ForEach-Object {
-    Copy-Item $_.FullName -Destination (Join-Path $drivePath "bin\windows\") -Force
-}
-
-Remove-Item $llamaZip -Force
-Remove-Item $llamaDir -Recurse -Force
-Write-Green "llama.cpp engine installed"
 
 # --- Download Gemma Model ---
 Write-Header "[ 5/6 ] Downloading Gemma 3 $Model model (GGUF)..."
@@ -147,15 +156,19 @@ if ($Model -eq "1b") {
     $modelUrl  = "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
 }
 
-$modelPath = Join-Path $drivePath "models\$modelFile"
+$modelPath = Join-Path $installRoot "models\$modelFile"
 
 Write-Info "This may take a few minutes depending on your internet speed..."
 Write-Info "Model: $modelFile"
 
-# Stream download with progress
-$webClient = New-Object System.Net.WebClient
-$webClient.DownloadFile($modelUrl, $modelPath)
-Write-Green "Model downloaded: $modelFile"
+if (Test-Path $modelPath) {
+    Write-Green "Model already installed: $modelFile"
+} else {
+    # Stream download with progress
+    $webClient = New-Object System.Net.WebClient
+    $webClient.DownloadFile($modelUrl, $modelPath)
+    Write-Green "Model downloaded: $modelFile"
+}
 
 # --- Write Config and Scripts ---
 Write-Header "[ 6/6 ] Writing config and launcher scripts..."
@@ -171,21 +184,21 @@ $config = @{
     open_browser = $true
 } | ConvertTo-Json -Depth 3
 
-$config | Out-File -FilePath (Join-Path $drivePath "config.json") -Encoding UTF8
+$config | Out-File -FilePath (Join-Path $installRoot "config.json") -Encoding UTF8
 
-# start.bat (root of USB for easy double-click)
-$startBat = @'
+# start.bat inside the Locali folder
+$startBat = @"
 @echo off
 cd /d "%~dp0"
 echo.
 echo  Locali - Starting local AI...
 echo.
 python launcher\launch.py 2>nul || (
-    bin\windows\llama-server.exe --model models\%MODEL_FILE% --port 8080 --host 127.0.0.1
+    bin\windows\llama-server.exe --model models\$modelFile --port 8080 --host 127.0.0.1
 )
 pause
-'@
-$startBat | Out-File -FilePath (Join-Path $drivePath "start.bat") -Encoding ASCII
+"@
+$startBat | Out-File -FilePath (Join-Path $installRoot "start.bat") -Encoding ASCII
 
 Write-Green "Config and launcher written"
 
@@ -196,9 +209,9 @@ Write-Host @"
   ║                                                      ║
   ║   ✅  Locali setup complete!                      ║
   ║                                                      ║
-  ║   To start on any Windows machine:                   ║
-  ║   → Double-click  start.bat  on the USB drive        ║
-  ║   → Or run: .\launcher\start.bat                     ║
+    ║   To start on any Windows machine:                   ║
+    ║   → Double-click  locali\start.bat  on the USB drive  ║
+    ║   → Or run: .\locali\start.bat                       ║
   ║                                                      ║
   ║   Then open:  http://localhost:8080                  ║
   ║                                                      ║
