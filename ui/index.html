@@ -543,8 +543,16 @@
 
   const history = [];
   let isGenerating = false;
+  let serverReady = false;
   let availableModels = [];
   let pendingAgentPlan = null;
+
+  function updateSendButtonState() {
+    const btn = document.getElementById('send-btn');
+    if (btn) {
+      btn.disabled = isGenerating || !serverReady;
+    }
+  }
 
   // ── Server health check ──────────────────────────────────
   async function checkServer() {
@@ -557,15 +565,20 @@
         const dot = document.getElementById('status-dot');
         dot.classList.add('online');
         document.getElementById('status-text').textContent = 'ready';
-        // enable input
-        const send = document.getElementById('send-btn');
-        if (send) send.disabled = false;
-        // load working memory into sidebar
-        loadMemory();
+        
+        if (!serverReady) {
+          serverReady = true;
+          loadMemory();
+        }
+        updateSendButtonState();
         return true;
       }
     } catch {}
-    setTimeout(checkServer, 2000);
+    
+    // Only keep checking if server not ready yet
+    if (!serverReady) {
+      setTimeout(checkServer, 2000);
+    }
     return false;
   }
 
@@ -812,12 +825,12 @@
   // ── Send message with streaming ──────────────────────────
   async function sendMessage() {
     const input = textarea.value.trim();
-    if (!input || isGenerating) return;
+    if (!input || isGenerating || !serverReady) return;
 
     textarea.value = '';
     textarea.style.height = 'auto';
     isGenerating = true;
-    document.getElementById('send-btn').disabled = true;
+    updateSendButtonState();
 
     addMessage('user', input);
     history.push({ role: 'user', content: input });
@@ -878,7 +891,7 @@
       }
     } finally {
       isGenerating = false;
-      document.getElementById('send-btn').disabled = false;
+      updateSendButtonState();
       textarea.focus();
     }
   }

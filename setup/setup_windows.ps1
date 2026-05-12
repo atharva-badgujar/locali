@@ -245,6 +245,31 @@ $startBat | Out-File -FilePath (Join-Path $installRoot "start.bat") -Encoding AS
 
 Write-Green "Config and launcher written"
 
+# --- Install optional Python dependencies ---
+Write-Header "Installing optional Python dependencies..."
+$psutilInstalled = $false
+$pythonExes = @("python3", "python", "py")
+
+foreach ($py in $pythonExes) {
+    if ((Get-Command $py -ErrorAction SilentlyContinue) -ne $null) {
+        Write-Info "Found Python: $py"
+        Write-Info "Installing psutil..."
+        & $py -m pip install --user psutil 2>&1 | Tee-Object -Variable pipOutput | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Green "psutil installed for resource monitoring"
+            $psutilInstalled = $true
+            break
+        } else {
+            Write-Yellow "Installation with $py failed, trying next..."
+        }
+    }
+}
+
+if (-not $psutilInstalled) {
+    Write-Red "psutil installation failed - stats will not display in terminal"
+    Write-Yellow "To fix, manually run: pip install --user psutil"
+}
+
 # --- Done ---
 Write-Host @"
 

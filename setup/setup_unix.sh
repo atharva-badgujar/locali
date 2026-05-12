@@ -343,6 +343,41 @@ if [[ -f "$REPO_DIR/ui/index.html" ]]; then
     ok "Chat UI copied"
 fi
 
+# --- Install optional Python dependencies ---
+echo ""
+echo -e "${BOLD}[ 6/6 ] Installing optional Python dependencies...${NC}"
+PSUTIL_INSTALLED=0
+
+# Try pip3 first
+if command -v pip3 &> /dev/null; then
+    if pip3 install --user psutil; then
+        ok "psutil installed for resource monitoring"
+        PSUTIL_INSTALLED=1
+    fi
+fi
+
+# Try python3 -m pip if pip3 failed
+if [[ $PSUTIL_INSTALLED -eq 0 ]] && command -v python3 &> /dev/null; then
+    if python3 -m pip install --user psutil; then
+        ok "psutil installed for resource monitoring"
+        PSUTIL_INSTALLED=1
+    fi
+fi
+
+# Try pip as fallback
+if [[ $PSUTIL_INSTALLED -eq 0 ]] && command -v pip &> /dev/null; then
+    if pip install --user psutil; then
+        ok "psutil installed for resource monitoring"
+        PSUTIL_INSTALLED=1
+    fi
+fi
+
+# Show warning if still not installed
+if [[ $PSUTIL_INSTALLED -eq 0 ]]; then
+    warn "psutil installation failed - stats will not display in terminal"
+    warn "To fix, manually run: pip3 install --user psutil"
+fi
+
 # --- Done ---
 echo ""
 echo -e "${GREEN}${BOLD}"
