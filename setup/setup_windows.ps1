@@ -98,8 +98,17 @@ Write-Green "Directories created"
 # --- Download llama.cpp Windows Binary ---
 Write-Header "[ 4/6 ] Downloading llama.cpp inference engine..."
 
-$llamaVersion = "b5185"
-$llamaUrl = "https://github.com/ggerganov/llama.cpp/releases/download/$llamaVersion/llama-$llamaVersion-bin-win-avx2-x64.zip"
+Write-Info "Fetching latest llama.cpp release info..."
+$releaseApiUrl = "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest"
+$releaseJson = Invoke-RestMethod -Uri $releaseApiUrl -UseBasicParsing
+$asset = $releaseJson.assets | Where-Object { $_.name -match "bin-win-cpu-x64.zip" -or $_.name -match "bin-win-avx2-x64.zip" } | Select-Object -First 1
+
+if ($null -eq $asset) {
+    Write-Red "Could not find a suitable llama.cpp binary in the latest release."
+    exit 1
+}
+
+$llamaUrl = $asset.browser_download_url
 $llamaZip  = Join-Path $env:TEMP "llama_win.zip"
 $llamaDir  = Join-Path $env:TEMP "llama_win"
 

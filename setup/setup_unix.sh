@@ -103,34 +103,52 @@ ok "Directories created"
 # --- Download llama.cpp Binary ---
 echo -e "\n${BOLD}[ 4/6 ] Downloading llama.cpp inference engine (${OS})...${NC}"
 
-LLAMA_VERSION="b5185"
+info "Fetching latest llama.cpp release info..."
+RELEASE_JSON=$(curl -sL "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest")
+
 TMP_DIR=$(mktemp -d)
 
 if [[ "$OS" == "mac" ]]; then
-    # Detect Apple Silicon vs Intel
     ARCH=$(uname -m)
     if [[ "$ARCH" == "arm64" ]]; then
-        LLAMA_URL="https://github.com/ggerganov/llama.cpp/releases/download/${LLAMA_VERSION}/llama-${LLAMA_VERSION}-bin-macos-arm64.zip"
+        LLAMA_URL=$(echo "$RELEASE_JSON" | grep -oE '"browser_download_url": "[^"]+bin-macos-arm64\.(zip|tar\.gz)"' | cut -d'"' -f4 | head -1)
     else
-        LLAMA_URL="https://github.com/ggerganov/llama.cpp/releases/download/${LLAMA_VERSION}/llama-${LLAMA_VERSION}-bin-macos-x64.zip"
+        LLAMA_URL=$(echo "$RELEASE_JSON" | grep -oE '"browser_download_url": "[^"]+bin-macos-x64\.(zip|tar\.gz)"' | cut -d'"' -f4 | head -1)
     fi
-    ZIP_FILE="$TMP_DIR/llama_mac.zip"
     info "Downloading for macOS (${ARCH})..."
-    curl -L -o "$ZIP_FILE" "$LLAMA_URL" --progress-bar
-    unzip -q "$ZIP_FILE" -d "$TMP_DIR/extracted"
-    BINARY=$(find "$TMP_DIR/extracted" -name "llama-server" -type f | head -1)
+else
+    LLAMA_URL=$(echo "$RELEASE_JSON" | grep -oE '"browser_download_url": "[^"]+bin-ubuntu-x64\.(zip|tar\.gz)"' | cut -d'"' -f4 | head -1)
+    info "Downloading for Linux..."
+fi
+
+if [[ -z "$LLAMA_URL" ]]; then
+    err "Could not find a suitable llama.cpp binary in the latest release."
+fi
+
+EXT="${LLAMA_URL##*.}"
+if [[ "$EXT" == "gz" ]]; then EXT="tar.gz"; fi
+
+ARCHIVE_FILE="$TMP_DIR/llama_archive.$EXT"
+curl -L -o "$ARCHIVE_FILE" "$LLAMA_URL" --progress-bar
+
+if [[ "$EXT" == "zip" ]]; then
+    unzip -q "$ARCHIVE_FILE" -d "$TMP_DIR/extracted"
+else
+    mkdir -p "$TMP_DIR/extracted"
+    tar -xzf "$ARCHIVE_FILE" -C "$TMP_DIR/extracted"
+fi
+
+BINARY=$(find "$TMP_DIR/extracted" -name "llama-server" -type f | head -1)
+if [[ -z "$BINARY" ]]; then
+    err "llama-server binary not found in the downloaded archive."
+fi
+
+if [[ "$OS" == "mac" ]]; then
     cp "$BINARY" "$DRIVE/bin/mac/llama-server"
     chmod +x "$DRIVE/bin/mac/llama-server"
     # Remove macOS quarantine to prevent "cannot be opened" errors
     xattr -d com.apple.quarantine "$DRIVE/bin/mac/llama-server" 2>/dev/null || true
 else
-    # Linux
-    LLAMA_URL="https://github.com/ggerganov/llama.cpp/releases/download/${LLAMA_VERSION}/llama-${LLAMA_VERSION}-bin-ubuntu-x64.zip"
-    ZIP_FILE="$TMP_DIR/llama_linux.zip"
-    info "Downloading for Linux..."
-    curl -L -o "$ZIP_FILE" "$LLAMA_URL" --progress-bar
-    unzip -q "$ZIP_FILE" -d "$TMP_DIR/extracted"
-    BINARY=$(find "$TMP_DIR/extracted" -name "llama-server" -type f | head -1)
     cp "$BINARY" "$DRIVE/bin/linux/llama-server"
     chmod +x "$DRIVE/bin/linux/llama-server"
 fi

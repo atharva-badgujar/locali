@@ -1,97 +1,170 @@
 # 🧠 Locali
 
-> **Carry a local AI in your pocket. Plug in. One command. Done.**
-> No internet after setup. No data on the host. No installation. Ever.
+> Carry a local AI in your pocket. Plug in. One command. Done.
+> Setup downloads the runtime binary and Gemma model once, then the USB works fully offline.
 
----
+Locali turns a USB drive into a portable AI assistant powered by Google’s Gemma model. You prepare the USB once on your own machine, then you can plug it into a Windows, Linux, or macOS computer and start chatting without installing anything on the host.
 
-## What is this?
+## What You Get
 
-Locali turns a USB drive into a portable AI assistant powered by Google's Gemma model. You do a **one-time setup** on your own machine, and after that — plug the USB into **any** Windows, Linux, or macOS computer and run one command to start chatting. Everything runs from the USB. The host machine is never touched.
+```text
+USB drive
+├── Gemma model file         downloaded during setup
+├── llama.cpp server binary  downloaded during setup
+├── launcher script          start.sh / start.bat
+├── chat UI                  offline HTML interface
+└── config.json              model and runtime settings
 
-```
-Your USB drive
-├── Gemma model weights         (~800 MB or ~2.5 GB)
-├── llama.cpp inference engine  (pre-built binary, no install)
-├── Chat UI                     (offline HTML page)
-└── One launcher script         (start.sh / start.bat)
-          │
-          ▼  plug into any machine
-
-Host machine contributes only:  CPU + RAM
-Host machine stores:            nothing
-Internet required after setup:  none
+Host machine contributes only: CPU + RAM
+Host machine stores:          nothing
+Internet required after setup: no
 ```
 
----
+## Requirements
 
-## Before You Begin — What You Need
+You need one machine with internet access to do setup, plus the USB drive itself.
 
-### A USB Drive
-| | Minimum | Recommended |
+| Item | Minimum | Recommended |
 |---|---|---|
-| Capacity | 8 GB | 16 GB+ |
-| **USB Version** | **USB 3.0 ← required** | USB 3.1 or 3.2 |
-| Read speed | 80 MB/s | 200 MB/s+ |
+| USB capacity | 8 GB | 16 GB+ |
+| USB speed | USB 3.0 | USB 3.1 / 3.2 |
+| Setup machine OS | Windows 10+, macOS 12+, Ubuntu 20.04+ | Latest stable release |
+| Target machine RAM | 4 GB | 8 GB+ |
+| Target machine CPU | Any 64-bit CPU | Multi-core 2GHz+ |
+| Admin rights | Not required | Not required |
+| Internet after setup | Not required | Not required |
 
-> ❌ **USB 2.0 will not work.** Model loading would take many minutes. Check your drive — it must say USB 3.0, 3.1, or 3.2.
->
-> ✅ How to check: On Windows open Device Manager → Universal Serial Bus controllers. On Mac/Linux run `system_profiler SPUSBDataType` or `lsusb -v`.
+USB 2.0 is too slow for a good experience.
 
-### The Machine You Set Up From (one-time only)
-- Internet connection to download the model (~800 MB or ~2.5 GB)
-- Windows 10+, macOS 12+, or Ubuntu 20.04+
-- USB drive plugged in
+## Model Choice
 
-### Any Machine You Later Plug Into
-| | Minimum | Recommended |
-|---|---|---|
-| RAM | 4 GB | 8 GB+ |
-| CPU | Any 64-bit (x86_64) | Multi-core 2GHz+ |
-| GPU | Not required | NVIDIA/AMD (auto-detected, speeds things up) |
-| OS | Windows 10+, Ubuntu 20.04+, macOS 12+ | Latest version |
-| Admin rights | ❌ Not needed | — |
-| Disk space | **0 GB** | — |
-| Internet | **Not needed** | — |
+| Model | USB Space | RAM Needed | Best For |
+|---|---|---|---|
+| Gemma 3 1B | ~800 MB | 4 GB | Fast, light usage, best default |
+| Gemma 3 4B | ~2.5 GB | 8 GB | Better answers, more memory needed |
 
-### Choose Your Model
+If you are unsure, use 1B first. You can rerun setup later with `--model 4b`.
 
-| Model | USB Space | RAM Needed | Speed | Best For |
-|---|---|---|---|---|
-| ⭐ **Gemma 3 1B** (recommended) | ~800 MB | 4 GB | Fast | Most tasks, quick answers |
-| **Gemma 3 4B** | ~2.5 GB | 8 GB | Moderate | Better reasoning and detail |
+## Setup
 
-**Not sure?** Start with 1B. You can always re-run setup later with `--model 4b`.
+There is no separate Locali release download required anymore. Use the files in this repository, then run the setup script for your operating system. The setup script will:
 
----
+- create the USB folder structure
+- download the llama.cpp server binary
+- download the selected Gemma model
+- write `config.json` and launch files onto the USB
 
-## ── SETUP ─────────────────────────────────────────────────
+### 1. Clone or download this repository
 
-> ⏱ One-time setup takes 5–15 minutes (mostly download time).
-> After this, the USB works forever — completely offline.
+Open a terminal in the repository folder on your setup machine.
 
-### Step 1 — Download Locali
+### 2. Plug in the USB drive
 
-👉 Go to: **[github.com/YOUR_USERNAME/locali/releases/latest](https://github.com/YOUR_USERNAME/locali/releases/latest)**
+Identify the mounted USB path before running the setup command.
 
-Download the file named:
-```
-locali-v1.0.zip
+### 3. Run the setup script
+
+#### Windows
+
+Open PowerShell and run:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+.\setup\setup_windows.ps1 -USBDrive "E:" -Model "1b"
 ```
 
-This zip has everything **except** the model weights (those are downloaded in Step 3).
+Replace `E:` with your USB drive letter.
 
----
+#### macOS
 
-### Step 2 — Extract to Your USB Drive
+Open Terminal and run:
 
-Plug in your USB. Extract the zip **directly onto the USB root**, not into a subfolder.
-
-After extraction, your USB should look exactly like this:
+```bash
+chmod +x setup/setup_unix.sh
+./setup/setup_unix.sh --drive /Volumes/MYUSB --model 1b
 ```
+
+Replace `MYUSB` with your USB volume name.
+
+#### Linux
+
+Open Terminal and run:
+
+```bash
+chmod +x setup/setup_unix.sh
+./setup/setup_unix.sh --drive /media/$USER/MYUSB --model 1b
+```
+
+Replace `MYUSB` with the mounted USB folder name used by your system.
+
+### 4. Wait for setup to finish
+
+The script checks your USB speed, downloads the required files, and prints a success message when everything is ready.
+
+Yes, this automatically downloads the Gemma model too. You do not need to fetch it manually.
+
+## First Run
+
+After setup is complete, safely eject the USB and use it on any supported machine.
+
+### Windows
+
+Run:
+
+```powershell
+E:\start.bat
+```
+
+Or just double-click `start.bat` from File Explorer on the USB drive.
+
+### macOS
+
+Run:
+
+```bash
+cd /Volumes/MYUSB
+./start.sh
+```
+
+### Linux
+
+Run:
+
+```bash
+cd /media/$USER/MYUSB
+./start.sh
+```
+
+Your browser opens automatically. If it does not, open:
+
+```text
+http://127.0.0.1:8080
+```
+
+Press `Ctrl+C` in the terminal to stop the server.
+
+## What Happens At Runtime
+
+```text
+start.sh / start.bat
+  ├─ detects the operating system
+  ├─ loads config.json from the USB drive
+  ├─ starts the bundled llama.cpp server
+  ├─ serves the model from the USB
+  ├─ opens the local chat UI in your browser
+  └─ keeps everything on localhost only
+```
+
+The host machine does not get software installed, registry changes, or persistent files. The only thing used from the host is CPU and RAM while the server is running.
+
+## Expected USB Layout
+
+After setup, the USB should look like this:
+
+```text
 YOUR_USB_DRIVE/
-├── start.bat          ← Windows launcher (double-click this later)
-├── start.sh           ← Linux/macOS launcher (run this later)
+├── start.bat
+├── start.sh
 ├── setup/
 │   ├── setup_windows.ps1
 │   └── setup_unix.sh
@@ -101,122 +174,15 @@ YOUR_USB_DRIVE/
 │   ├── windows/
 │   ├── linux/
 │   └── mac/
-├── models/            ← empty folder — model goes here next
+├── models/
 ├── ui/
 │   └── index.html
 └── config.json
 ```
 
----
-
-### Step 3 — Download the Gemma Model onto the USB
-
-This is the only step that uses the internet. Run the setup script for your OS.
-It downloads Gemma and saves it directly onto your USB drive.
-
-**On Windows** — open PowerShell (no admin needed) and run:
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-E:\setup\setup_windows.ps1 -USBDrive "E:" -Model "1b"
-```
-> Replace `E:` with your actual USB drive letter (check File Explorer).
-
-**On macOS** — open Terminal and run:
-```bash
-chmod +x /Volumes/MYUSB/setup/setup_unix.sh
-/Volumes/MYUSB/setup/setup_unix.sh --drive /Volumes/MYUSB --model 1b
-```
-> Replace `MYUSB` with your USB volume name (visible in Finder sidebar).
-
-**On Linux** — open Terminal and run:
-```bash
-chmod +x /media/$USER/MYUSB/setup/setup_unix.sh
-/media/$USER/MYUSB/setup/setup_unix.sh --drive /media/$USER/MYUSB --model 1b
-```
-> Replace `MYUSB` with your USB name (check with `lsblk` or your file manager).
-
-The script will check your USB speed, download the model (~800 MB for 1B), and confirm everything is ready. You'll see a green success box when done.
-
-**✅ Eject the USB. Setup is complete. Internet no longer needed.**
-
----
-
-## ── USING IT ──────────────────────────────────────────────
-
-This is what you do every time, on any machine. **No internet. One command.**
-
-### 1. Plug in the USB
-
-### 2. Open a terminal and run:
-
-**Windows:**
-```powershell
-E:\start.bat
-```
-Or just **double-click `start.bat`** in File Explorer on the USB.
-
-**macOS:**
-```bash
-cd /Volumes/MYUSB
-./start.sh
-```
-
-**Linux:**
-```bash
-cd /media/$USER/MYUSB
-./start.sh
-```
-
-### 3. Chat
-
-Your browser opens automatically to the chat interface.
-If it doesn't, go to: **http://localhost:8080**
-
-### 4. Stop
-
-Press `Ctrl+C` in the terminal. Server stops, RAM is freed. USB is safe to remove.
-
----
-
-## What Happens Under the Hood
-
-```
-./start.sh
-  │
-  ├─ Detects OS (Windows / Linux / macOS)
-  ├─ Selects the right llama.cpp binary from USB/bin/
-  ├─ Loads the Gemma model into the host machine's RAM
-  ├─ Starts server at 127.0.0.1:8080 (localhost only, never network-exposed)
-  ├─ Opens browser to USB/ui/index.html
-  │
-  └─ You chat. All inference runs on host CPU/RAM.
-     Nothing written to host disk. No network calls.
-     
-Ctrl+C
-  │
-  └─ Server stops. RAM freed. Zero traces on host.
-```
-
----
-
-## Host Machine Safety
-
-| | Locali |
-|---|---|
-| Writes files to host disk | ❌ Never |
-| Modifies Windows registry | ❌ Never |
-| Requires admin / sudo | ❌ Never |
-| Makes network requests | ❌ Never |
-| Exposes server beyond localhost | ❌ Never |
-| Installs software on host | ❌ Never |
-| Leaves anything after exit | ❌ Never |
-| Uses CPU/RAM while running | ✅ Yes (like any normal app) |
-
----
-
 ## Configuration
 
-Edit `config.json` on the USB to customise behaviour. No restart of setup needed — just rerun `start.sh`.
+Edit `config.json` on the USB to change model and runtime settings.
 
 ```json
 {
@@ -230,117 +196,60 @@ Edit `config.json` on the USB to customise behaviour. No restart of setup needed
 }
 ```
 
-| Setting | What it does |
+| Setting | Meaning |
 |---|---|
-| `model` | GGUF filename in the `/models` folder |
-| `context_size` | Memory window in tokens. Higher = slower but more context |
-| `port` | Change if 8080 is already taken on the host |
-| `gpu_layers` | `"auto"` uses GPU if found, else CPU. Set `0` to force CPU-only |
-| `threads` | `"auto"` uses all CPU cores. Set a number to limit |
-| `temperature` | 0.1 = precise, 0.7 = balanced, 1.0 = creative |
-| `open_browser` | `false` to disable auto browser opening |
-
----
+| `model` | GGUF filename stored in `/models` |
+| `context_size` | Context window size in tokens |
+| `port` | Port used by the local server |
+| `gpu_layers` | `auto` uses CPU by default unless you set otherwise |
+| `threads` | `auto` uses available CPU cores |
+| `temperature` | Lower values are more deterministic |
+| `open_browser` | Set to `false` to skip auto-opening the browser |
 
 ## Troubleshooting
 
-**Model loading is very slow (takes minutes)**
-Your USB is too slow or it's plugged into a USB 2.0 port. USB 3.0 ports have a blue plastic tab inside, or an `SS` (SuperSpeed) label. Try a different port.
-
-**"Port 8080 already in use"**
-Change `"port"` in `config.json` to `8181` or any free port, then open `http://localhost:8181`.
-
-**Process killed / "out of memory"**
-Not enough free RAM on the host. Close other apps, or switch to the 1B model by changing `"model"` in `config.json`.
-
-**macOS: "llama-server cannot be opened" security warning**
-Run once on your USB (this just removes the quarantine flag):
-```bash
-xattr -d com.apple.quarantine /Volumes/MYUSB/bin/mac/llama-server
-```
-
-**Windows: antivirus flags llama-server.exe**
-False positive — common with compiled ML binaries. Add a Windows Security exclusion for the USB drive, or build from source: see `docs/build-from-source.md`.
-
-**"Python not found" message on startup**
-No problem — the launcher falls back to running the binary directly. Python only adds a nicer startup experience. Everything still works.
-
-**Chat UI shows "Connection failed"**
-The server may still be loading. Wait 10–20 seconds and refresh. On slow CPUs or large models, first load takes longer.
-
----
-
-## FAQ
-
-**Do I need an account anywhere?**
-No. No GitHub account, no Google account, no Hugging Face account. The setup script downloads from public URLs.
-
-**Can I use this on a work, school, or library computer?**
-Yes. No admin rights needed, nothing installed, nothing left behind.
-
-**Can I use a model other than Gemma?**
-Yes — any GGUF format model works. Put it in the `models/` folder on the USB and update `"model"` in `config.json`.
-
-**What if the USB is pulled out mid-conversation?**
-The server crashes cleanly. Nothing is lost or damaged on the host. Your USB model files are only read, never written during runtime.
-
-**Does this work on Apple Silicon (M1/M2/M3)?**
-The Intel binary runs via Rosetta 2. For best performance, build a native ARM binary — see `docs/build-from-source.md`.
-
-**Can multiple people use different USBs on the same machine?**
-Yes, as long as they use different port numbers (set in `config.json`).
-
----
+- Model loading is slow: use a USB 3.x port, not USB 2.0.
+- Port already in use: change `port` in `config.json` and rerun `start.sh` or `start.bat`.
+- Out of memory: close other apps or switch to the 1B model.
+- macOS security warning: clear quarantine on the mac binary with `xattr -d com.apple.quarantine /Volumes/MYUSB/bin/mac/llama-server`.
+- Windows antivirus warning: compiled ML binaries can trigger false positives; add an exclusion or build from source.
+- Connection failed in the browser: wait for the first load to finish and refresh.
 
 ## Project Structure
 
-```
+```text
 locali/
 ├── README.md
-├── start.bat                   # Windows: double-click or run from terminal
-├── start.sh                    # Linux/macOS: ./start.sh
-├── config.json                 # Edit to change model, port, etc.
-│
+├── start.bat
+├── start.sh
+├── config.json
 ├── setup/
-│   ├── setup_windows.ps1       # One-time setup (downloads model to USB)
-│   └── setup_unix.sh           # Same for Linux/macOS
-│
+│   ├── setup_windows.ps1
+│   └── setup_unix.sh
 ├── launcher/
-│   └── launch.py               # OS detection, binary selection, server start
-│
-├── bin/                        # Pre-built llama.cpp (no installation on host)
+│   └── launch.py
+├── bin/
 │   ├── windows/llama-server.exe
 │   ├── linux/llama-server
 │   └── mac/llama-server
-│
-├── models/                     # GGUF model files (downloaded by setup, gitignored)
-│
+├── models/
 ├── ui/
-│   └── index.html              # Offline chat UI (zero external requests)
-│
+│   └── index.html
 └── docs/
     ├── contributing.md
     └── build-from-source.md
 ```
 
----
-
 ## Contributing
 
-PRs welcome — see `docs/contributing.md`. Most needed:
-- Native ARM Linux binaries (Raspberry Pi, ARM servers)
-- Native Apple Silicon binary
-- Download progress bar during setup
-- More model presets (CodeGemma, Gemma 3n E4B)
-
----
+See `docs/contributing.md`. Helpful additions include native ARM Linux binaries, a native Apple Silicon build, progress feedback during setup, and more model presets.
 
 ## License
 
-MIT. Gemma model weights are subject to [Google's Gemma Terms of Use](https://ai.google.dev/gemma/terms).
+MIT. Gemma model weights are subject to [Google’s Gemma Terms of Use](https://ai.google.dev/gemma/terms).
 
 ## Credits
 
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) — inference engine
-- [Google Gemma](https://ai.google.dev/gemma) — open model family
+- [Google Gemma](https://ai.google.dev/gemma) — model family
 - [Hugging Face](https://huggingface.co) — model hosting
