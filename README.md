@@ -1,148 +1,96 @@
 # 🧠 Locali
 
-Local AI on a USB drive. No installation, no internet after setup.
+> **Portable local AI on a USB drive** — no install on host machine, no cloud dependency after setup.
 
-Locali packages a Gemma model and a private inference engine into a portable folder. Plug your USB into any Windows, macOS, or Linux machine, run one command, and start chatting. All data stays on the USB.
+Locali packages a Gemma model and a private inference engine into a single portable folder. Plug your USB into Windows, macOS, or Linux, run one command, and chat locally.
 
 ---
 
-## Installation & Setup
+## ✨ UI Highlights
 
-### Step 1: Clone the repository
+- Clean dark chat interface with message history and model switcher.
+- Improved markdown rendering (bold text, inline code, fenced code blocks).
+- Code snippet window style for fenced code with clear visual separation.
+- Live server status and CPU/RAM usage HUD.
+- Conversation persistence to USB (`data/`), so chats follow you.
+
+---
+
+## 🚀 Quick Start (Step-by-step)
+
+### 1) Clone this repository
 
 ```bash
 git clone https://github.com/atharvabadgujar/locali.git
 cd locali
 ```
 
-### Step 2: Plug in your USB drive
+### 2) Insert and locate your USB drive
 
-Mount the USB and note its path:
-- **macOS**: `/Volumes/MYUSB` (visible in Finder)
-- **Windows**: `E:` or `F:` (visible in File Explorer)
-- **Linux**: `/media/$USER/MYUSB` (from `lsblk` or mount point)
+Common mount paths:
+- **macOS:** `/Volumes/MYUSB`
+- **Linux:** `/media/$USER/MYUSB`
+- **Windows:** `E:` (or another drive letter)
 
-### Step 3: Run setup script
+### 3) Run setup to copy runtime + models to USB
 
-The setup script asks which models to install, then downloads everything (~1–2 GB).
+#### macOS / Linux
 
-**macOS / Linux:**
 ```bash
 chmod +x setup/setup_unix.sh
 ./setup/setup_unix.sh --drive /Volumes/MYUSB
 ```
 
-**Windows (PowerShell):**
+#### Windows (PowerShell)
+
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\setup\setup_windows.ps1 -USBDrive "E:"
 ```
 
-When prompted, select:
-- **1** for Gemma 3 1B (recommended, ~800 MB)
-- **2** for Gemma 3 4B (~2.5 GB, better quality)
-- **3** for both
+During setup, choose model option:
+- `1` → Gemma 3 1B (~800 MB, fastest)
+- `2` → Gemma 3 4B (~2.5 GB, better quality)
+- `3` → install both
 
-Setup completes in a few minutes. It skips re-downloading files if they already exist.
+### 4) Run Locali from USB
 
-### Step 4: Use Locali on any machine
+#### macOS / Linux
 
-Safely eject the USB and plug it into any Windows/macOS/Linux machine.
-
-**macOS / Linux:**
 ```bash
 cd /Volumes/MYUSB/locali
 ./start.sh
 ```
 
-**Windows:**
+#### Windows (CMD)
+
 ```cmd
 cd E:\locali
 start.bat
 ```
 
-Or double-click `start.bat` from File Explorer.
+Then open:
 
-Your browser opens to `http://127.0.0.1:8080`. Start chatting.
-
----
-
-## System Requirements
-
-| Aspect | Minimum | Recommended |
-|---|---|---|
-| **USB Size** | 8 GB | 16 GB+ |
-| **USB Speed** | USB 3.0 | USB 3.1+ |
-| **RAM** | 4 GB | 8 GB+ |
-| **OS** | Windows 10+, macOS 12+, Ubuntu 20.04+ | Latest stable |
-| **CPU** | Any 64-bit | Multi-core 2GHz+ |
-| **Admin Rights** | Not needed | Not needed |
-| **Internet (after setup)** | Not needed | Not needed |
-
----
-
-## Features
-
-- **Chat Interface**: Modern dark UI with conversation history
-- **Model Switching**: Switch between installed models without restarting
-- **Offline**: Works completely offline after setup
-- **Private**: All data stays on the USB; no cloud sync
-- **Cross-Platform**: Works on Windows, macOS, Linux
-- **Resource Stats**: Live CPU/RAM usage display in header (requires `psutil`)
-
----
-
-## Common Issues
-
-| Issue | Solution |
-|---|---|
-| Model doesn't reply | Restart launcher; ensure setup completed |
-| USB too slow | Use USB 3.0+ ports, not USB 2.0 |
-| Out of memory | Close other apps or switch to 1B model |
-| Port 8080 in use | Edit `config.json`: change `"port": 8080` and restart |
-| Resource stats missing | Install `python3 -m pip install --user psutil` |
-| macOS security warning | Run `xattr -d com.apple.quarantine /Volumes/MYUSB/locali/bin/mac/llama-server` |
-| Windows antivirus blocks | Add USB folder to antivirus exclusions |
-
----
-
-## What Gets Downloaded
-
-- **Gemma 3 1B Model**: ~800 MB
-- **Gemma 3 4B Model**: ~2.5 GB (if selected)
-- **llama.cpp Binary**: ~50–100 MB per OS
-- **Runtime Libraries**: ~100–200 MB
-
-Total: 1–5 GB depending on model selection.
-
----
-
-## USB Layout After Setup
-
-```
-YOUR_USB/
-└── locali/
-    ├── start.sh / start.bat          (launcher)
-    ├── config.json                   (settings)
-    ├── launcher/
-    │   └── launch.py                 (control server)
-    ├── bin/
-    │   ├── windows/llama-server.exe
-    │   ├── linux/llama-server
-    │   └── mac/llama-server
-    ├── models/
-    │   └── gemma-3-1b-it-q4_k_m.gguf
-    ├── ui/
-    │   └── index.html                (web interface)
-    └── data/
-        └── (chat history, profile)
+```text
+http://127.0.0.1:8080
 ```
 
 ---
 
-## Configuration
+## 🧭 Daily Usage Flow
 
-Edit `locali/config.json` on the USB to customize (optional):
+1. Plug in USB.
+2. Launch `start.sh` (macOS/Linux) or `start.bat` (Windows).
+3. Wait until status becomes **ready**.
+4. Select a model from the top bar if needed and click **Switch**.
+5. Start chatting.
+6. Use **Clear Chat** to reset current conversation.
+
+---
+
+## ⚙️ Configuration
+
+Edit `config.json` on the USB:
 
 ```json
 {
@@ -156,27 +104,72 @@ Edit `locali/config.json` on the USB to customize (optional):
 }
 ```
 
-| Setting | Default | Notes |
+| Key | Meaning |
+|---|---|
+| `model` | Default model filename |
+| `context_size` | Token context window |
+| `port` | Local web port |
+| `threads` | CPU threads (`auto` or number) |
+| `gpu_layers` | GPU acceleration hint (`0` for CPU-only) |
+| `temperature` | Creativity control |
+| `open_browser` | Auto-open UI at launch |
+
+---
+
+## 💻 System Requirements
+
+| Aspect | Minimum | Recommended |
 |---|---|---|
-| `model` | 1B GGUF | Current active model |
-| `context_size` | 2048 | Token window size |
-| `port` | 8080 | Local server port |
-| `threads` | `"auto"` | CPU threads (or number) |
-| `gpu_layers` | `"auto"` | GPU acceleration (0 = CPU only) |
-| `temperature` | 0.7 | Lower = deterministic, higher = creative |
-| `open_browser` | true | Auto-open browser on start |
+| USB size | 8 GB | 16 GB+ |
+| USB speed | USB 3.0 | USB 3.1+ |
+| RAM | 4 GB | 8 GB+ |
+| OS | Win 10+, macOS 12+, Ubuntu 20.04+ | Latest stable |
+| CPU | 64-bit | Multi-core 2 GHz+ |
 
 ---
 
-## Data Privacy
+## 🛠 Troubleshooting
 
-- **Chat history** stored locally in `data/memory.json` on the USB
-- **User profile** stored locally in `data/profile.json` on the USB
-- **No external calls** — everything runs on localhost
-- **Nothing on host machine** — no installation, no registry changes, no temp files persist
+| Problem | Fix |
+|---|---|
+| UI shows no response | Restart launcher and verify setup completed |
+| Port conflict on `8080` | Change `port` in `config.json` |
+| Slow responses | Use USB 3.x port and faster model |
+| Memory issues | Close other apps or switch to 1B model |
+| Missing stats HUD | `python3 -m pip install --user psutil` |
+| macOS security block | `xattr -d com.apple.quarantine /Volumes/MYUSB/locali/bin/mac/llama-server` |
 
 ---
 
-## License
+## 📁 USB Layout After Setup
 
-MIT. Gemma model weights are subject to [Google's Gemma Terms of Use](https://ai.google.dev/gemma/terms).
+```text
+YOUR_USB/
+└── locali/
+    ├── start.sh / start.bat
+    ├── config.json
+    ├── launcher/launch.py
+    ├── bin/
+    │   ├── windows/llama-server.exe
+    │   ├── linux/llama-server
+    │   └── mac/llama-server
+    ├── models/
+    ├── ui/index.html
+    └── data/
+        ├── memory.json
+        └── profile.json
+```
+
+---
+
+## 🔒 Privacy
+
+- All chat data is stored locally on USB.
+- Inference runs on localhost.
+- No sign-in, cloud sync, or telemetry by default.
+
+---
+
+## 📜 License
+
+MIT License. Gemma model weights follow [Google Gemma Terms](https://ai.google.dev/gemma/terms).
