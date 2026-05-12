@@ -161,6 +161,7 @@ class Backend:
         self.process      = None
         self.current      = norm(cfg.get("model", ""))
         self._lock        = threading.Lock()
+        self.log_file     = None
 
         # If config points to an invalid/ghost model, fall back to first real model.
         models = discover_models(self.root, self.cfg)
@@ -213,15 +214,31 @@ class Backend:
                 "--log-disable",
             ]
 
+            log_path = self.data_dir / "llama-server.log"
+            if self.log_file:
+                try:
+                    self.log_file.close()
+                except Exception:
+                    pass
+            self.log_file = open(log_path, "ab")
             self.process = subprocess.Popen(
                 cmd, env=self._env(),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=self.log_file,
+                stderr=subprocess.STDOUT,
             )
 
         if not wait_backend(self.backend_port, timeout=90):
+            details = ""
+            try:
+                log_path = self.data_dir / "llama-server.log"
+                if log_path.exists():
+                    tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-20:]
+                    if tail:
+                        details = "\nRecent llama-server log:\n" + "\n".join(tail)
+            except Exception:
+                pass
             self._stop_process()
-            die("llama-server failed to start. Check your model file and available RAM.")
+            die("llama-server failed to start. Check your model file, binary compatibility, and available RAM." + details)
 
     def _stop_process(self):
         if self.process and self.process.poll() is None:
@@ -231,6 +248,12 @@ class Backend:
             except subprocess.TimeoutExpired:
                 self.process.kill()
         self.process = None
+        if self.log_file:
+            try:
+                self.log_file.close()
+            except Exception:
+                pass
+            self.log_file = None
 
     def stop(self):
         with self._lock:
