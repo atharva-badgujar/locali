@@ -198,6 +198,20 @@
     display: none; /* Hidden as requested */
   }
 
+  .stats-hud {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: 12px;
+  }
+
+  .message-meta {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
   /* ── Chat area ── */
   #chat {
     flex: 1;
@@ -486,6 +500,7 @@
         <button class="switch-btn" id="model-switch-btn" onclick="switchModel()">Switch</button>
       </div>
       <span class="status-label"><span class="status-dot" id="status-dot"></span><span id="status-text">connecting...</span></span>
+      <span id="stats-hud" class="stats-hud"></span>
       <button class="clear-btn" onclick="clearChat()">Clear Chat</button>
     </div>
   </header>
@@ -513,7 +528,7 @@
       <div id="error-toast"></div>
       <div class="input-row">
         <textarea id="user-input" placeholder="Message Locali..." rows="1" autocomplete="off"></textarea>
-        <button id="send-btn" onclick="sendMessage()" title="Send">↑</button>
+        <button id="send-btn" onclick="sendMessage()" title="Send" disabled>↑</button>
       </div>
       <div class="footer-meta">
         <span class="footer-hint">Enter to send · Shift+Enter for newline</span>
@@ -537,12 +552,16 @@
       const state = await (await fetch('/api/state', { signal: AbortSignal.timeout(3000) })).json();
       availableModels = state.available_models || [];
       renderModelOptions(state.current_model);
-
       const r = await fetch('/api/health', { signal: AbortSignal.timeout(3000) });
       if (r.ok) {
         const dot = document.getElementById('status-dot');
         dot.classList.add('online');
         document.getElementById('status-text').textContent = 'ready';
+        // enable input
+        const send = document.getElementById('send-btn');
+        if (send) send.disabled = false;
+        // load working memory into sidebar
+        loadMemory();
         return true;
       }
     } catch {}
@@ -621,6 +640,59 @@
     });
   }
 
+  // ── Working memory and history ─────────────────────────
+  async function loadMemory() {
+    try {
+      const r = await fetch('/api/memory');
+      if (!r.ok) return;
+      const j = await r.json();
+      const mem = j.memory || { conversations: [] };
+      renderHistoryList(mem.conversations || []);
+    } catch (e) { /* ignore */ }
+  }
+
+  function renderHistoryList(convos) {
+    const list = document.getElementById('history-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const newBtn = document.createElement('div');
+    newBtn.className = 'history-item active';
+    newBtn.textContent = 'New Chat';
+    newBtn.onclick = () => { clearChat(); document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active')); newBtn.classList.add('active'); };
+    list.appendChild(newBtn);
+    convos.slice().reverse().forEach((c, idx) => {
+      const el = document.createElement('div');
+      el.className = 'history-item';
+      el.textContent = c.summary || (`Conversation ${idx+1}`);
+      el.onclick = () => {
+        document.querySelectorAll('.history-item').forEach(x => x.classList.remove('active'));
+        el.classList.add('active');
+        clearChat();
+        // show the conversation summary and reply
+        if (c.summary) addMessage('user', c.summary);
+        if (c.reply) addMessage('assistant', c.reply);
+      };
+      list.appendChild(el);
+    });
+  }
+
+  // ── Poll server stats and show in header ───────────────
+  setInterval(async () => {
+    try {
+      const r = await fetch('/api/stats');
+      if (!r.ok) return;
+      const j = await r.json();
+      const s = j.stats || {};
+      const hud = document.getElementById('stats-hud');
+      if (!hud) return;
+      if (s.host_cpu_percent !== undefined) {
+        hud.textContent = `CPU ${s.host_cpu_percent.toFixed(0)}% · RAM ${Math.round((s.host_mem_rss||0)/1024/1024)}MB · model: ${s.model || ''}`;
+      } else if (s.load_avg) {
+        hud.textContent = `load ${s.load_avg[0].toFixed(2)} · model: ${s.model || ''}`;
+      }
+    } catch (e) { /* ignore */ }
+  }, 3000);
+
   // ── UI helpers ───────────────────────────────────────────
   const chatEl = document.getElementById('chat');
 
@@ -644,6 +716,14 @@
 
     div.appendChild(avatar);
     div.appendChild(bubble);
+    // add metadata (timestamp, tokens placeholder, model)
+    const meta = document.createElement('div');
+    meta.className = 'message-meta';
+    const now = new Date();
+    const time = now.toLocaleTimeString();
+    const model = (document.getElementById('model-select')?.value || '').replace('.gguf','');
+    meta.textContent = `${time} · model: ${model || '—'} · tokens: N/A`;
+    div.appendChild(meta);
     chatEl.appendChild(div);
     chatEl.scrollTop = chatEl.scrollHeight;
     return bubble;

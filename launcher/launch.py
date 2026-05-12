@@ -7,6 +7,10 @@ and opens the offline chat UI. Zero host modification.
 
 import os, sys, json, platform, subprocess, threading, webbrowser
 import time, signal, argparse, http.client
+try:
+    import psutil
+except Exception:
+    psutil = None
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -56,8 +60,8 @@ def norm(name):
 
 def discover_models(root, cfg):
     """Return all .gguf files present in models/, preserving config order."""
-    listed = [norm(m) for m in (cfg.get("models") or []) if m]
-    found  = {p.name for p in (root / "models").glob("*.gguf")}
+    listed = [norm(m) for m in (cfg.get("models") or []) if m and not norm(m).startswith("._")]
+    found  = {p.name for p in (root / "models").glob("*.gguf") if not p.name.startswith("._")}
     # listed first (if they exist), then any extras on disk
     ordered = [m for m in listed if m in found]
     for m in sorted(found):
@@ -149,6 +153,14 @@ class Backend:
         self.process      = None
         self.current      = norm(cfg.get("model", ""))
         self._lock        = threading.Lock()
+
+        # If config points to an invalid/ghost model, fall back to first real model.
+        models = discover_models(self.root, self.cfg)
+        if self.current.startswith("._") or self.current not in models:
+            if models:
+                self.current = models[0]
+                self.cfg["model"] = self.current
+                save_cfg(self.root, self.cfg)
 
     # ── Environment for subprocess ────────────────────────
     def _env(self):
@@ -245,17 +257,12 @@ class Backend:
         return json.loads(raw)
 
     def _system_messages(self):
-        msgs = [{"role": "system", "content":
-            "You are Locali, a private offline AI assistant running from the user's USB drive. "
-            "Never claim to send data externally. Be concise and helpful."}]
-        if self.profile.get("name"):
-            msgs.append({"role": "system", "content": f"User name: {self.profile['name']}"})
-        if self.profile.get("role"):
-            msgs.append({"role": "system", "content": f"Context: {self.profile['role']}"})
-        recent = [c.get("summary","") for c in self.memory["conversations"][-5:] if c.get("summary")]
-        if recent:
-            msgs.append({"role": "system", "content": "Recent topics: " + " | ".join(recent)})
-        return msgs
+        # NOTE: some llama.cpp backends enforce strict user/assistant alternation
+        # and reject messages with role 'system'. To maximize compatibility we
+        # avoid sending explicit 'system' role messages. Profile and recent
+        # memory will instead be injected into prompts on the server-side if
+        # needed in future. For now return an empty list.
+        return []
 
     def chat(self, messages, temperature=0.7, max_tokens=1024):
         full = self._system_messages() + messages
@@ -394,10 +401,13 @@ class Handler(BaseHTTPRequestHandler):
 
         routes = {
             "/health":      lambda: {"ok": True},
+            "/api/health":  lambda: {"ok": True},
             "/api/state":   lambda: self.backend.state(),
             "/api/models":  lambda: {"current": self.backend.current,
                                      "available": discover_models(self.backend.root, self.backend.cfg)},
             "/api/profile": lambda: {"ok": True, "profile": self.backend.profile},
+            "/api/memory":  lambda: {"ok": True, "memory": self.backend.memory},
+            "/api/stats":   lambda: {"ok": True, "stats": _gather_stats(self.backend)},
         }
         if path in routes:
             self._json(routes[path]())
@@ -438,6 +448,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not msgs:
                     self._json({"error": "messages required"}, 400); return
 
+                # Log incoming chat brief to terminal
+                try:
+                    preview = msgs[-1].get('content','')[:120]
+                except Exception:
+                    preview = ''
+                info(f"Chat incoming: {preview}")
+
                 if stream:
                     self.send_response(200)
                     self.send_header("Content-Type",  "text/event-stream; charset=utf-8")
@@ -452,6 +469,7 @@ class Handler(BaseHTTPRequestHandler):
                             self.wfile.flush()
                         self.wfile.write(b"data: [DONE]\n\n")
                         self.wfile.flush()
+                        info("Chat stream completed")
                     except Exception as e:
                         err_data = json.dumps({"error": str(e)})
                         self.wfile.write(f"data: {err_data}\n\n".encode())
@@ -489,6 +507,40 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self._json({"error": "not found"}, 404)
+
+
+def _gather_stats(backend):
+    """Return a small resource usage snapshot. Uses psutil if available."""
+    try:
+        if psutil:
+            p = psutil.Process(os.getpid())
+            cpu = psutil.cpu_percent(interval=0.1)
+            mem = p.memory_info().rss
+            total_mem = psutil.virtual_memory().total
+            mem_pct = (mem / total_mem) * 100 if total_mem else 0
+            backend_cpu = None
+            backend_mem = None
+            if backend.process and backend.process.pid:
+                try:
+                    bp = psutil.Process(backend.process.pid)
+                    backend_cpu = bp.cpu_percent(interval=0.0)
+                    backend_mem = bp.memory_info().rss
+                except Exception:
+                    backend_cpu = None
+            return {
+                "host_cpu_percent": cpu,
+                "host_mem_rss": mem,
+                "host_mem_percent": mem_pct,
+                "backend_cpu_percent": backend_cpu,
+                "backend_mem_rss": backend_mem,
+                "model": backend.current,
+            }
+        else:
+            # Minimal cross-platform fallback
+            load = os.getloadavg() if hasattr(os, 'getloadavg') else (0,0,0)
+            return {"load_avg": load, "model": backend.current}
+    except Exception:
+        return {"model": backend.current}
 
 # ── Main ──────────────────────────────────────────────────────────────────
 def main():
@@ -530,6 +582,26 @@ def main():
     info(f"Threads: {resolve_threads(cfg)}  GPU layers: {resolve_ngl(cfg)}")
 
     backend.start()
+
+    # Start background stats printer (prints live CPU/memory for host and backend when psutil available)
+    def _stats_printer():
+        if not psutil:
+            info("psutil not installed — live resource stats disabled. Install 'psutil' for live stats.")
+            return
+        try:
+            while True:
+                s = _gather_stats(backend)
+                try:
+                    bcpu = s.get('backend_cpu_percent')
+                    bmem = s.get('backend_mem_rss')
+                    info(f"Host CPU: {s.get('host_cpu_percent'):.1f}% · Host mem: {int(s.get('host_mem_rss')/1024/1024)}MB ({s.get('host_mem_percent'):.1f}%) · Backend CPU: {bcpu if bcpu is not None else 'N/A'} · Backend mem: {int(bmem/1024/1024) if bmem else 'N/A'} · model: {s.get('model')}")
+                except Exception:
+                    info(f"Resource: {s}")
+                time.sleep(3)
+        except Exception:
+            pass
+
+    threading.Thread(target=_stats_printer, daemon=True).start()
 
     # ── HTTP control server ──────────────────────────────
     class LS(ThreadingHTTPServer):
