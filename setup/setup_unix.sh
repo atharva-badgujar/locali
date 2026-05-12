@@ -102,6 +102,24 @@ for dir in launcher "bin/windows" "bin/linux" "bin/mac" models ui docs setup; do
 done
 ok "Directories created"
 
+# Ensure macOS dylib symlinks exist (idempotent)
+create_mac_symlinks() {
+    macdir="$INSTALL_ROOT/bin/mac"
+    [[ -d "$macdir" ]] || return 0
+    shopt -s nullglob
+    for f in "$macdir"/*.dylib; do
+        base=$(basename "$f")
+        # If a file is versioned like libfoo.0.0.123.dylib, create libfoo.0.dylib -> pointed to it
+        if [[ "$base" =~ ^(.+\.0)\..*\.dylib$ ]]; then
+            short="${BASH_REMATCH[1]}.dylib"
+            if [[ ! -e "$macdir/$short" ]]; then
+                ln -sf "$base" "$macdir/$short"
+            fi
+        fi
+    done
+    shopt -u nullglob
+}
+
 # --- Download llama.cpp Binary ---
 echo -e "\n${BOLD}[ 4/6 ] Downloading llama.cpp inference engine (${OS})...${NC}"
 
@@ -147,14 +165,33 @@ fi
 
 if [[ "$OS" == "mac" ]]; then
     if [[ -x "$INSTALL_ROOT/bin/mac/llama-server" ]] && compgen -G "$INSTALL_ROOT/bin/mac/*.dylib" > /dev/null; then
+        create_mac_symlinks
         ok "llama.cpp engine already installed"
     else
         cp "$BINARY" "$INSTALL_ROOT/bin/mac/llama-server"
         chmod +x "$INSTALL_ROOT/bin/mac/llama-server"
         # Copy bundled shared libraries that the macOS binary links against.
         find "$TMP_DIR/extracted" -name "*.dylib" -type f -exec cp {} "$INSTALL_ROOT/bin/mac/" \;
+        # Create missing versioned/unversioned symlinks expected by dyld.
+        if command -v otool >/dev/null 2>&1; then
+            deps=$(otool -L "$BINARY" | awk '/@rpath/ {print $1}' | xargs -n1 basename | sort -u)
+            for dep in $deps; do
+                target="$INSTALL_ROOT/bin/mac/$dep"
+                if [[ ! -e "$target" ]]; then
+                    # try to find a candidate file with the same prefix
+                    prefix="$(echo "$dep" | sed -E 's/\.[0-9].*//')"
+                    candidate=$(find "$TMP_DIR/extracted" -name "$prefix*.dylib" -print -quit)
+                    if [[ -n "$candidate" ]]; then
+                        cp "$candidate" "$INSTALL_ROOT/bin/mac/"
+                        ln -sf "$(basename "$candidate")" "$target"
+                    fi
+                fi
+            done
+        fi
         # Remove macOS quarantine to prevent "cannot be opened" errors
         xattr -d com.apple.quarantine "$INSTALL_ROOT/bin/mac/llama-server" 2>/dev/null || true
+        # Ensure symlinks for copied dylibs
+        create_mac_symlinks
         ok "llama.cpp engine installed"
     fi
 else
@@ -211,8 +248,39 @@ cat > "$INSTALL_ROOT/start.sh" <<'EOF'
 #!/usr/bin/env bash
 # Locali — quick launcher
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-chmod +x "$SCRIPT_DIR/launcher/launch.py" 2>/dev/null || true
-python3 "$SCRIPT_DIR/launcher/launch.py" --root "$SCRIPT_DIR"
+
+if command -v python3 &>/dev/null; then
+    python3 "$SCRIPT_DIR/launcher/launch.py" --root "$SCRIPT_DIR"
+    exit 0
+fi
+
+if command -v python &>/dev/null; then
+    python "$SCRIPT_DIR/launcher/launch.py" --root "$SCRIPT_DIR"
+    exit 0
+fi
+
+echo "  Python not found. Starting in fallback mode..."
+
+OS="$(uname)"
+if [[ "$OS" == "Darwin" ]]; then
+    BINARY="$SCRIPT_DIR/bin/mac/llama-server"
+    export DYLD_LIBRARY_PATH="$SCRIPT_DIR/bin/mac:${DYLD_LIBRARY_PATH:-}"
+else
+    BINARY="$SCRIPT_DIR/bin/linux/llama-server"
+fi
+
+chmod +x "$BINARY" 2>/dev/null
+
+# read model from config.json (fallback to default filename)
+MODEL_FILE=$(awk 'match($0, /"model"[[:space:]]*:[[:space:]]*"([^"]+)"/, m){print m[1]; exit}' "$SCRIPT_DIR/config.json" || echo "gemma-3-1b-it-q4_k_m.gguf")
+
+"$BINARY" \
+    --model "$SCRIPT_DIR/models/$MODEL_FILE" \
+    --host 127.0.0.1 \
+    --port 8080 \
+    --ctx-size 2048 \
+    --threads 4 \
+    --log-disable
 EOF
 chmod +x "$INSTALL_ROOT/start.sh"
 

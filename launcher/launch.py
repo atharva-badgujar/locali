@@ -219,6 +219,19 @@ def main():
         usb_temp.mkdir(exist_ok=True)
         env["TEMP"] = str(usb_temp)
         env["TMP"]  = str(usb_temp)
+        # Ensure bundled windows bin is on PATH so DLLs and exe are discoverable
+        win_bin = str(root / "bin" / "windows")
+        env["PATH"] = win_bin + os.pathsep + env.get("PATH", "")
+    # On macOS, ensure the bundled dylibs are found by the loader
+    if os_name == "mac":
+        mac_lib_dir = str(root / "bin" / "mac")
+        old = env.get("DYLD_LIBRARY_PATH", "")
+        env["DYLD_LIBRARY_PATH"] = mac_lib_dir + (":" + old if old else "")
+    # On Linux, ensure any bundled shared libraries are found
+    if os_name == "linux":
+        linux_lib_dir = str(root / "bin" / "linux")
+        old_ld = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = linux_lib_dir + (":" + old_ld if old_ld else "")
 
     process = subprocess.Popen(
         cmd,
