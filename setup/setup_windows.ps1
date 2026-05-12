@@ -20,6 +20,25 @@ function Write-Yellow { param($msg) Write-Host "  ⚠ $msg" -ForegroundColor Yel
 function Write-Red    { param($msg) Write-Host "  ✗ $msg" -ForegroundColor Red }
 function Write-Info   { param($msg) Write-Host "  → $msg" -ForegroundColor Cyan }
 function Write-Header { param($msg) Write-Host "`n$msg" -ForegroundColor White }
+function Select-Model {
+    Write-Host ""
+    Write-Host "Choose which model(s) to install:"
+    Write-Host "  1) Gemma 3 1B  (~0.8 GB, fastest)"
+    Write-Host "  2) Gemma 3 4B  (~2.5 GB, better quality)"
+    Write-Host "  3) Both         (~3.3 GB total)"
+    $choice = Read-Host "Select 1, 2, or 3 [1]"
+    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
+    switch ($choice) {
+        "1" { return "1b" }
+        "2" { return "4b" }
+        "3" { return "both" }
+        default { Write-Red "Invalid selection. Choose 1, 2, or 3."; exit 1 }
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($Model)) {
+    $Model = Select-Model
+}
 
 Write-Host @"
 
@@ -50,22 +69,6 @@ if ($null -eq $drive) {
     exit 1
 }
 
-if ([string]::IsNullOrWhiteSpace($Model)) {
-    Write-Host ""
-    Write-Host "Choose which model(s) to install:"
-    Write-Host "  1) Gemma 3 1B"
-    Write-Host "  2) Gemma 3 4B"
-    Write-Host "  3) Both"
-    $choice = Read-Host "Select 1, 2, or 3 [1]"
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
-    switch ($choice) {
-        "1" { $Model = "1b" }
-        "2" { $Model = "4b" }
-        "3" { $Model = "both" }
-        default { Write-Red "Invalid selection. Choose 1, 2, or 3."; exit 1 }
-    }
-}
-
 if ($Model -notin @("1b", "4b", "both")) {
     Write-Red "Model must be '1b', '4b', or 'both'."
     exit 1
@@ -77,6 +80,15 @@ Write-Green "Drive found. Free space: ${freeGB} GB"
 $requiredGB = if ($Model -eq "both") { 6 } elseif ($Model -eq "4b") { 4 } else { 2 }
 if ($freeGB -lt $requiredGB) {
     Write-Red "Not enough space. Need ${requiredGB} GB, have ${freeGB} GB."
+    exit 1
+}
+
+Write-Host ""
+Write-Info "This will download llama.cpp binaries and selected model(s) to your USB."
+$confirm = Read-Host "Continue? [Y/n]"
+if ([string]::IsNullOrWhiteSpace($confirm)) { $confirm = "Y" }
+if ($confirm -notmatch "^[Yy]$") {
+    Write-Red "Setup cancelled by user."
     exit 1
 }
 

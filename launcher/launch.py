@@ -103,6 +103,7 @@ def port_free(port):
 def wait_backend(port, timeout=90):
     deadline = time.time() + timeout
     while time.time() < deadline:
+        c = None
         try:
             c = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
             c.request("GET", "/health")
@@ -110,6 +111,9 @@ def wait_backend(port, timeout=90):
                 return True
         except Exception:
             time.sleep(0.5)
+        finally:
+            if c is not None:
+                c.close()
     return False
 
 # ── Resolve runtime settings ──────────────────────────────────────────────
@@ -145,6 +149,10 @@ class Backend:
         self.data_dir = root / "data"
         self.data_dir.mkdir(exist_ok=True)
         self.memory  = load_json(self.data_dir / "memory.json",  {"conversations": []})
+        if not isinstance(self.memory, dict):
+            self.memory = {"conversations": []}
+        self.memory.setdefault("conversations", [])
+        self.memory.setdefault("sessions", [])
         self.profile = load_json(self.data_dir / "profile.json", {
             "name": "", "role": "", "preferences": []
         })
@@ -248,13 +256,16 @@ class Backend:
     def _post(self, payload, timeout=120):
         body = json.dumps(payload).encode()
         conn = http.client.HTTPConnection("127.0.0.1", self.backend_port, timeout=timeout)
-        conn.request("POST", "/v1/chat/completions", body,
-                     {"Content-Type": "application/json", "Content-Length": str(len(body))})
-        resp = conn.getresponse()
-        raw  = resp.read().decode()
-        if resp.status != 200:
-            raise RuntimeError(raw or f"backend HTTP {resp.status}")
-        return json.loads(raw)
+        try:
+            conn.request("POST", "/v1/chat/completions", body,
+                         {"Content-Type": "application/json", "Content-Length": str(len(body))})
+            resp = conn.getresponse()
+            raw  = resp.read().decode()
+            if resp.status != 200:
+                raise RuntimeError(raw or f"backend HTTP {resp.status}")
+            return json.loads(raw)
+        finally:
+            conn.close()
 
     def _system_messages(self):
         # NOTE: some llama.cpp backends enforce strict user/assistant alternation
@@ -269,7 +280,7 @@ class Backend:
         resp = self._post({"model": self.current, "messages": full,
                            "temperature": temperature, "max_tokens": max_tokens, "stream": False})
         content = resp["choices"][0]["message"]["content"]
-        # Save summary to memory
+        # Save short history metadata for sidebar fallback.
         if messages:
             summary = messages[-1]["content"][:120]
             self.memory["conversations"].append({"summary": summary, "reply": content[:120],
@@ -284,29 +295,32 @@ class Backend:
                    "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         body = json.dumps(payload).encode()
         conn = http.client.HTTPConnection("127.0.0.1", self.backend_port, timeout=120)
-        conn.request("POST", "/v1/chat/completions", body,
-                     {"Content-Type": "application/json", "Content-Length": str(len(body))})
-        resp = conn.getresponse()
-        if resp.status != 200:
-            raise RuntimeError(resp.read().decode() or f"backend HTTP {resp.status}")
         chunks = []
-        while True:
-            line = resp.readline()
-            if not line:
-                break
-            text = line.decode("utf-8", errors="ignore").strip()
-            if not text.startswith("data: "):
-                continue
-            data = text[6:].strip()
-            if data == "[DONE]":
-                break
-            try:
-                delta = json.loads(data)["choices"][0]["delta"].get("content", "")
-                if delta:
-                    chunks.append(delta)
-                    yield delta
-            except Exception:
-                continue
+        try:
+            conn.request("POST", "/v1/chat/completions", body,
+                         {"Content-Type": "application/json", "Content-Length": str(len(body))})
+            resp = conn.getresponse()
+            if resp.status != 200:
+                raise RuntimeError(resp.read().decode() or f"backend HTTP {resp.status}")
+            while True:
+                line = resp.readline()
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="ignore").strip()
+                if not text.startswith("data: "):
+                    continue
+                data = text[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    delta = json.loads(data)["choices"][0]["delta"].get("content", "")
+                    if delta:
+                        chunks.append(delta)
+                        yield delta
+                except Exception:
+                    continue
+        finally:
+            conn.close()
         # persist summary
         if messages and chunks:
             content = "".join(chunks)
@@ -334,6 +348,39 @@ class Backend:
         if raw.startswith("```"):
             raw = raw.strip("`").lstrip("json").strip()
         return json.loads(raw)
+
+    def list_sessions(self):
+        sessions = self.memory.get("sessions", [])
+        # newest first for UI
+        return sorted(sessions, key=lambda s: s.get("updated_at", ""), reverse=True)
+
+    def save_session(self, session_id, messages):
+        if not isinstance(messages, list):
+            raise ValueError("messages must be a list")
+        clean = []
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            role = m.get("role")
+            content = m.get("content")
+            if role in ("user", "assistant") and isinstance(content, str):
+                clean.append({"role": role, "content": content})
+        if not clean:
+            raise ValueError("session has no valid messages")
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        title = next((m["content"] for m in clean if m["role"] == "user" and m["content"].strip()), "New Chat")[:120]
+        sessions = self.memory.get("sessions", [])
+        replaced = False
+        for i, s in enumerate(sessions):
+            if s.get("id") == session_id:
+                sessions[i] = {"id": session_id, "title": title, "messages": clean, "updated_at": now}
+                replaced = True
+                break
+        if not replaced:
+            sessions.append({"id": session_id, "title": title, "messages": clean, "updated_at": now})
+        self.memory["sessions"] = sessions[-30:]
+        save_json(self.data_dir / "memory.json", self.memory)
+        return {"id": session_id, "title": title, "updated_at": now}
 
     def execute(self, command, cwd=None):
         safe_root = self.root.resolve()
@@ -407,6 +454,7 @@ class Handler(BaseHTTPRequestHandler):
                                      "available": discover_models(self.backend.root, self.backend.cfg)},
             "/api/profile": lambda: {"ok": True, "profile": self.backend.profile},
             "/api/memory":  lambda: {"ok": True, "memory": self.backend.memory},
+            "/api/conversations": lambda: {"ok": True, "conversations": self.backend.list_sessions()},
             "/api/stats":   lambda: {"ok": True, "stats": _gather_stats(self.backend)},
         }
         if path in routes:
@@ -479,6 +527,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "response": resp})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
+            return
+
+        if path == "/api/conversations/save":
+            try:
+                body = self._body_json()
+                session_id = str(body.get("id", "")).strip()
+                messages = body.get("messages", [])
+                if not session_id:
+                    raise ValueError("id required")
+                session = self.backend.save_session(session_id, messages)
+                self._json({"ok": True, "session": session})
+            except Exception as e:
+                self._json({"error": str(e)}, 400)
             return
 
         if path == "/api/agent/plan":

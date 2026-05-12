@@ -28,18 +28,26 @@ if %ERRORLEVEL% == 0 (
 echo  Python not found. Starting in fallback mode...
 echo.
 
-for /f "tokens=2 delims=:" %%a in ('findstr "model" config.json') do (
-    set MODEL_LINE=%%a
-)
-set MODEL_FILE=gemma-3-1b-it-q4_k_m.gguf
+setlocal EnableDelayedExpansion
+set "MODEL_FILE="
+for /f "tokens=2 delims=:," %%a in ('findstr /i "\"model\"" config.json') do set "MODEL_FILE=%%a"
+set "MODEL_FILE=!MODEL_FILE:"=!"
+set "MODEL_FILE=!MODEL_FILE: =!"
+if not defined MODEL_FILE set "MODEL_FILE=gemma-3-1b-it-q4_k_m.gguf"
+
+set "PORT=8080"
+for /f "tokens=2 delims=:," %%a in ('findstr /i "\"port\"" config.json') do set "PORT=%%a"
+set "PORT=!PORT: =!"
+if not defined PORT set "PORT=8080"
 
 bin\windows\llama-server.exe ^
-    --model models\%MODEL_FILE% ^
+    --model models\!MODEL_FILE! ^
     --host 127.0.0.1 ^
-    --port 8080 ^
+    --port !PORT! ^
     --ctx-size 2048 ^
     --threads 4 ^
     --log-disable
+endlocal
 
 :end
 pause
