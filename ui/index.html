@@ -278,14 +278,47 @@
   .bubble pre {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0 0 10px 10px;
     padding: 14px;
-    margin: 12px 0;
+    margin: 0;
     overflow-x: auto;
     font-family: var(--mono);
     font-size: 13px;
     line-height: 1.6;
   }
+
+  .code-block {
+    margin: 12px 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #121212;
+  }
+
+  .code-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: #181818;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .copy-btn {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
 
   .bubble code {
     font-family: var(--mono);
@@ -787,17 +820,41 @@
   }
 
   function formatContent(text) {
-    // Code blocks
-    text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
-      `<pre><code>${escHtml(code.trim())}</code></pre>`
-    );
-    // Inline code
-    text = text.replace(/`([^`]+)`/g, (_, c) => `<code>${escHtml(c)}</code>`);
-    // Bold
-    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Newlines
+    const codeBlocks = [];
+
+    text = text.replace(/```([\w#+-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      const language = (lang || 'text').trim();
+      const escaped = escHtml(code.trim());
+      const idx = codeBlocks.push({ language, escaped }) - 1;
+      return `__CODE_BLOCK_${idx}__`;
+    });
+
+    text = escHtml(text);
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    text = text.replace(/\*\*([^*][\s\S]*?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__(.+?)__/g, '<strong>$1</strong>');
     text = text.replace(/\n/g, '<br>');
+
+    codeBlocks.forEach((block, idx) => {
+      const codeId = `code-${Date.now()}-${idx}-${Math.random().toString(16).slice(2, 8)}`;
+      const snippet = `<div class="code-block"><div class="code-head"><span>${block.language}</span><button class="copy-btn" onclick="copyCode('${codeId}', this)">Copy</button></div><pre><code id="${codeId}">${block.escaped}</code></pre></div>`;
+      text = text.replace(`__CODE_BLOCK_${idx}__`, snippet);
+    });
+
     return text;
+  }
+
+  async function copyCode(codeId, btn) {
+    const el = document.getElementById(codeId);
+    if (!el) return;
+    try {
+      await navigator.clipboard.writeText(el.textContent || '');
+      const old = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(() => btn.textContent = old, 1200);
+    } catch {
+      showError('Clipboard access blocked by browser');
+    }
   }
 
   function escHtml(str) {
