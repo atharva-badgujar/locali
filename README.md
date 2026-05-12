@@ -50,7 +50,7 @@ If you are unsure, use 1B first. You can rerun setup later with `--model 4b`.
 There is no separate Locali release download required anymore. Use the files in this repository, then run the setup script for your operating system. The setup script will:
 
 - create the USB folder structure
-- download the llama.cpp server binary
+- download the llama.cpp server binary and its required support libraries on macOS
 - download the selected Gemma model
 - write `config.json` and launch files onto the USB
 

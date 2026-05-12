@@ -146,6 +146,8 @@ fi
 if [[ "$OS" == "mac" ]]; then
     cp "$BINARY" "$DRIVE/bin/mac/llama-server"
     chmod +x "$DRIVE/bin/mac/llama-server"
+    # Copy bundled shared libraries that the macOS binary links against.
+    find "$TMP_DIR/extracted" -name "*.dylib" -type f -exec cp {} "$DRIVE/bin/mac/" \;
     # Remove macOS quarantine to prevent "cannot be opened" errors
     xattr -d com.apple.quarantine "$DRIVE/bin/mac/llama-server" 2>/dev/null || true
 else

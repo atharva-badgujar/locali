@@ -224,7 +224,8 @@ def main():
         cmd,
         env=env,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
     )
 
     # ── Wait for server ready ───────────────────────────────
@@ -232,7 +233,18 @@ def main():
     ready = False
     for _ in range(60):
         if process.poll() is not None:
-            err("Server process exited unexpectedly. Check your model file.")
+            stderr_output = ""
+            if process.stderr is not None:
+                try:
+                    stderr_output, _ = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    stderr_output, _ = process.communicate()
+
+            message = "Server process exited unexpectedly."
+            if stderr_output:
+                message += f"\n\n{stderr_output.strip()}"
+            err(message)
         if check_port(port) is False:
             ready = True
             break
