@@ -5,13 +5,19 @@
 
 Locali turns a USB drive into a portable AI assistant powered by Google’s Gemma model. You prepare the USB once on your own machine, then you can plug it into a Windows, Linux, or macOS computer and start chatting without installing anything on the host.
 
+During setup, you choose which model(s) to install. During use, you can switch between the installed models from the UI without editing `config.json`.
+
+Locali also has an approval-based agent mode: ask it to plan a task, review the proposed command, and approve it before anything runs on the machine.
+
+Your chats, prompts, and approved actions stay local to the machine and USB drive after setup. Locali uses `llama-server` only as a hidden inference engine behind Locali's own UI and APIs.
+
 ## What You Get
 
 ```text
 USB drive
 └── locali/
     ├── Gemma model file         downloaded during setup
-    ├── llama.cpp server binary  downloaded during setup
+    ├── llama.cpp server binary  downloaded during setup as a private backend
     ├── launcher script          start.sh / start.bat
     ├── chat UI                  offline HTML interface
     └── config.json              model and runtime settings
@@ -52,7 +58,7 @@ There is no separate Locali release download required anymore. Use the files in 
 
 - create a top-level `locali` folder on the USB
 - download the llama.cpp server binary and its required support libraries on macOS
-- download the selected Gemma model
+- download the selected Gemma model(s)
 - write `config.json` and launch files onto the USB
 
 ### 1. Clone or download this repository
@@ -74,6 +80,8 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\setup\setup_windows.ps1 -USBDrive "E:" -Model "1b"
 ```
 
+Use `-Model "both"` if you want both Gemma 3 1B and 4B installed.
+
 Replace `E:` with your USB drive letter.
 
 #### macOS
@@ -84,6 +92,8 @@ Open Terminal and run:
 chmod +x setup/setup_unix.sh
 ./setup/setup_unix.sh --drive /Volumes/MYUSB --model 1b
 ```
+
+Use `--model both` if you want both Gemma 3 1B and 4B installed.
 
 Replace `MYUSB` with your USB volume name.
 
@@ -96,17 +106,21 @@ chmod +x setup/setup_unix.sh
 ./setup/setup_unix.sh --drive /media/$USER/MYUSB --model 1b
 ```
 
+Use `--model both` if you want both Gemma 3 1B and 4B installed.
+
 Replace `MYUSB` with the mounted USB folder name used by your system.
 
 ### 4. Wait for setup to finish
 
-The script checks your USB speed, downloads the required files, and prints a success message when everything is ready.
+The script checks your USB speed, downloads the selected model files, and prints a success message when everything is ready.
 
-Yes, this automatically downloads the Gemma model too. If the model file already exists in `locali/models`, setup skips downloading it again.
+Yes, this automatically downloads the Gemma model(s) too. If a model file already exists in `locali/models`, setup skips downloading it again.
 
 ## First Run
 
 After setup is complete, safely eject the USB and use it on any supported machine.
+
+If you installed more than one model, use the model dropdown in the top-right of the UI to switch between them.
 
 ### Windows
 
@@ -150,13 +164,13 @@ Press `Ctrl+C` in the terminal to stop the server.
 locali/start.sh / locali/start.bat
   ├─ detects the operating system
   ├─ loads config.json from the USB drive
-  ├─ starts the bundled llama.cpp server
-  ├─ serves the model from the USB
-  ├─ opens the local chat UI in your browser
+  ├─ starts the bundled llama.cpp server privately on localhost
+  ├─ serves the model through Locali's own API
+  ├─ opens Locali's local chat UI in your browser
   └─ keeps everything on localhost only
 ```
 
-The host machine does not get software installed, registry changes, or persistent files. The only thing used from the host is CPU and RAM while the server is running.
+The host machine does not get software installed, registry changes, or persistent files. The only thing used from the host is CPU and RAM while the server is running. After setup, Locali does not need to send your data to any external service.
 
 ## Expected USB Layout
 
@@ -184,11 +198,12 @@ YOUR_USB_DRIVE/
 
 ## Configuration
 
-Edit `locali/config.json` on the USB to change model and runtime settings.
+Edit `locali/config.json` on the USB to change runtime defaults if you want to, but it is no longer required for model switching.
 
 ```json
 {
   "model": "gemma-3-1b-it-q4_k_m.gguf",
+  "models": ["gemma-3-1b-it-q4_k_m.gguf", "gemma-3-4b-it-q4_k_m.gguf"],
   "context_size": 2048,
   "port": 8080,
   "gpu_layers": "auto",
@@ -201,12 +216,23 @@ Edit `locali/config.json` on the USB to change model and runtime settings.
 | Setting | Meaning |
 |---|---|
 | `model` | GGUF filename stored in `/models` |
+| `models` | List of installed models shown in the UI switcher |
 | `context_size` | Context window size in tokens |
 | `port` | Port used by the local server |
 | `gpu_layers` | `auto` uses CPU by default unless you set otherwise |
 | `threads` | `auto` uses available CPU cores |
 | `temperature` | Lower values are more deterministic |
 | `open_browser` | Set to `false` to skip auto-opening the browser |
+
+## Agent Mode
+
+The agent panel at the top of the UI can plan a task and propose a shell command. Nothing runs automatically.
+
+1. Type a task in the agent box, for example: `list the files in this folder` or `check the git status`.
+2. Review the proposed action.
+3. Click `approve & run` only if you want Locali to execute it.
+
+The agent is restricted to the USB root by default and will refuse to run outside that folder.
 
 ## Troubleshooting
 

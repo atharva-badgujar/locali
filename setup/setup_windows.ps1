@@ -3,8 +3,7 @@ param(
     [string]$USBDrive,
 
     [Parameter(Mandatory=$false)]
-    [ValidateSet("1b", "4b")]
-    [string]$Model = "1b"
+    [string]$Model = ""
 )
 
 # ============================================================
@@ -51,10 +50,31 @@ if ($null -eq $drive) {
     exit 1
 }
 
+if ([string]::IsNullOrWhiteSpace($Model)) {
+    Write-Host ""
+    Write-Host "Choose which model(s) to install:"
+    Write-Host "  1) Gemma 3 1B"
+    Write-Host "  2) Gemma 3 4B"
+    Write-Host "  3) Both"
+    $choice = Read-Host "Select 1, 2, or 3 [1]"
+    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
+    switch ($choice) {
+        "1" { $Model = "1b" }
+        "2" { $Model = "4b" }
+        "3" { $Model = "both" }
+        default { Write-Red "Invalid selection. Choose 1, 2, or 3."; exit 1 }
+    }
+}
+
+if ($Model -notin @("1b", "4b", "both")) {
+    Write-Red "Model must be '1b', '4b', or 'both'."
+    exit 1
+}
+
 $freeGB = [math]::Round($drive.Free / 1GB, 1)
 Write-Green "Drive found. Free space: ${freeGB} GB"
 
-$requiredGB = if ($Model -eq "4b") { 4 } else { 2 }
+$requiredGB = if ($Model -eq "both") { 6 } elseif ($Model -eq "4b") { 4 } else { 2 }
 if ($freeGB -lt $requiredGB) {
     Write-Red "Not enough space. Need ${requiredGB} GB, have ${freeGB} GB."
     exit 1
@@ -148,27 +168,42 @@ if ((Test-Path $serverExePath) -and ($null -ne $existingDll)) {
 # --- Download Gemma Model ---
 Write-Header "[ 5/6 ] Downloading Gemma 3 $Model model (GGUF)..."
 
-if ($Model -eq "1b") {
-    $modelFile = "gemma-3-1b-it-q4_k_m.gguf"
-    $modelUrl  = "https://huggingface.co/lmstudio-community/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf"
+$modelsToInstall = @()
+if ($Model -eq "both") {
+    $modelsToInstall = @(
+        @{ File = "gemma-3-1b-it-q4_k_m.gguf"; Url = "https://huggingface.co/lmstudio-community/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf" },
+        @{ File = "gemma-3-4b-it-q4_k_m.gguf"; Url = "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf" }
+    )
+} elseif ($Model -eq "1b") {
+    $modelsToInstall = @(
+        @{ File = "gemma-3-1b-it-q4_k_m.gguf"; Url = "https://huggingface.co/lmstudio-community/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf" }
+    )
 } else {
-    $modelFile = "gemma-3-4b-it-q4_k_m.gguf"
-    $modelUrl  = "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
+    $modelsToInstall = @(
+        @{ File = "gemma-3-4b-it-q4_k_m.gguf"; Url = "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf" }
+    )
 }
 
-$modelPath = Join-Path $installRoot "models\$modelFile"
+$modelFiles = @()
+foreach ($model in $modelsToInstall) {
+    $modelFile = $model.File
+    $modelUrl = $model.Url
+    $modelPath = Join-Path $installRoot "models\$modelFile"
+    $modelFiles += $modelFile
 
-Write-Info "This may take a few minutes depending on your internet speed..."
-Write-Info "Model: $modelFile"
+    Write-Info "This may take a few minutes depending on your internet speed..."
+    Write-Info "Model: $modelFile"
 
-if (Test-Path $modelPath) {
-    Write-Green "Model already installed: $modelFile"
-} else {
-    # Stream download with progress
-    $webClient = New-Object System.Net.WebClient
-    $webClient.DownloadFile($modelUrl, $modelPath)
-    Write-Green "Model downloaded: $modelFile"
+    if (Test-Path $modelPath) {
+        Write-Green "Model already installed: $modelFile"
+    } else {
+        $webClient = New-Object System.Net.WebClient
+        $webClient.DownloadFile($modelUrl, $modelPath)
+        Write-Green "Model downloaded: $modelFile"
+    }
 }
+
+$modelFile = $modelFiles[0]
 
 # --- Write Config and Scripts ---
 Write-Header "[ 6/6 ] Writing config and launcher scripts..."
@@ -176,6 +211,7 @@ Write-Header "[ 6/6 ] Writing config and launcher scripts..."
 # config.json
 $config = @{
     model        = $modelFile
+    models       = $modelFiles
     context_size = 2048
     port         = 8080
     gpu_layers   = "auto"
@@ -189,12 +225,19 @@ $config | Out-File -FilePath (Join-Path $installRoot "config.json") -Encoding UT
 # start.bat inside the Locali folder
 $startBat = @"
 @echo off
+setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 echo.
 echo  Locali - Starting local AI...
 echo.
-python launcher\launch.py 2>nul || (
-    bin\windows\llama-server.exe --model models\$modelFile --port 8080 --host 127.0.0.1
+python launcher\launch.py 2>nul
+if errorlevel 1 (
+    set "MODEL_FILE="
+    for /f "tokens=2 delims=:," %%a in ('findstr /i "\"model\"" config.json') do set "MODEL_FILE=%%a"
+    set "MODEL_FILE=!MODEL_FILE:"=!"
+    set "MODEL_FILE=!MODEL_FILE: =!"
+    if not defined MODEL_FILE set "MODEL_FILE=$modelFile"
+    bin\windows\llama-server.exe --model models\!MODEL_FILE! --port 8080 --host 127.0.0.1
 )
 pause
 "@

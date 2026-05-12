@@ -31,7 +31,7 @@ echo -e "${NC}"
 
 # --- Parse Arguments ---
 DRIVE=""
-MODEL="1b"
+MODEL=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --drive|-d) DRIVE="$2"; shift 2 ;;
@@ -41,7 +41,24 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$DRIVE" ]] && err "USB drive path required. Example: --drive /media/user/MYUSB"
-[[ "$MODEL" != "1b" && "$MODEL" != "4b" ]] && err "Model must be '1b' or '4b'"
+
+if [[ -z "$MODEL" ]]; then
+        echo ""
+        echo "Choose which model(s) to install:"
+        echo "  1) Gemma 3 1B"
+        echo "  2) Gemma 3 4B"
+        echo "  3) Both"
+        read -r -p "Select 1, 2, or 3 [1]: " MODEL_CHOICE
+        MODEL_CHOICE="${MODEL_CHOICE:-1}"
+        case "$MODEL_CHOICE" in
+                1) MODEL="1b" ;;
+                2) MODEL="4b" ;;
+                3) MODEL="both" ;;
+                *) err "Invalid selection. Choose 1, 2, or 3." ;;
+        esac
+fi
+
+[[ "$MODEL" != "1b" && "$MODEL" != "4b" && "$MODEL" != "both" ]] && err "Model must be '1b', '4b', or 'both'"
 
 INSTALL_ROOT="$DRIVE/locali"
 
@@ -67,7 +84,13 @@ fi
 
 ok "Drive found. Free space: ${FREE_GB} GB"
 
-REQUIRED_GB=$([[ "$MODEL" == "4b" ]] && echo 4 || echo 2)
+if [[ "$MODEL" == "both" ]]; then
+    REQUIRED_GB=6
+elif [[ "$MODEL" == "4b" ]]; then
+    REQUIRED_GB=4
+else
+    REQUIRED_GB=2
+fi
 if (( $(echo "$FREE_GB < $REQUIRED_GB" | bc -l) )); then
     err "Not enough space. Need ${REQUIRED_GB} GB, have ${FREE_GB} GB."
 fi
@@ -209,23 +232,43 @@ rm -rf "$TMP_DIR"
 # --- Download Gemma Model ---
 echo -e "\n${BOLD}[ 5/6 ] Downloading Gemma 3 ${MODEL} model (GGUF format)...${NC}"
 
-if [[ "$MODEL" == "1b" ]]; then
-    MODEL_FILE="gemma-3-1b-it-q4_k_m.gguf"
-    MODEL_URL="https://huggingface.co/lmstudio-community/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf"
+MODELS_TO_INSTALL=()
+if [[ "$MODEL" == "both" ]]; then
+    MODELS_TO_INSTALL=("1b" "4b")
+elif [[ "$MODEL" == "1b" ]]; then
+    MODELS_TO_INSTALL=("1b")
 else
-    MODEL_FILE="gemma-3-4b-it-q4_k_m.gguf"
-    MODEL_URL="https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
+    MODELS_TO_INSTALL=("4b")
 fi
 
-info "Downloading: $MODEL_FILE"
-info "This may take a few minutes..."
+MODEL_FILES=()
+for item in "${MODELS_TO_INSTALL[@]}"; do
+    if [[ "$item" == "1b" ]]; then
+        model_file="gemma-3-1b-it-q4_k_m.gguf"
+        model_url="https://huggingface.co/lmstudio-community/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf"
+    else
+        model_file="gemma-3-4b-it-q4_k_m.gguf"
+        model_url="https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
+    fi
 
-if [[ -f "$INSTALL_ROOT/models/$MODEL_FILE" ]]; then
-    ok "Model already installed: $MODEL_FILE"
-else
-    curl -L -o "$INSTALL_ROOT/models/$MODEL_FILE" "$MODEL_URL" --progress-bar
-    ok "Model downloaded: $MODEL_FILE"
-fi
+    MODEL_FILES+=("$model_file")
+    info "Downloading: $model_file"
+    info "This may take a few minutes..."
+
+    if [[ -f "$INSTALL_ROOT/models/$model_file" ]]; then
+        ok "Model already installed: $model_file"
+    else
+        curl -L -o "$INSTALL_ROOT/models/$model_file" "$model_url" --progress-bar
+        ok "Model downloaded: $model_file"
+    fi
+done
+
+MODEL_FILE="${MODEL_FILES[0]}"
+MODELS_JSON=""
+for idx in "${!MODEL_FILES[@]}"; do
+    [[ -n "$MODELS_JSON" ]] && MODELS_JSON+=", "
+    MODELS_JSON+="\"${MODEL_FILES[$idx]}\""
+done
 
 # --- Write Config and Scripts ---
 echo -e "\n${BOLD}[ 6/6 ] Writing config and launcher scripts...${NC}"
@@ -234,6 +277,7 @@ echo -e "\n${BOLD}[ 6/6 ] Writing config and launcher scripts...${NC}"
 cat > "$INSTALL_ROOT/config.json" <<EOF
 {
   "model": "$MODEL_FILE",
+    "models": [$MODELS_JSON],
   "context_size": 2048,
   "port": 8080,
   "gpu_layers": "auto",
