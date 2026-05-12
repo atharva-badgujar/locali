@@ -16,6 +16,22 @@ warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
 err()  { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 info() { echo -e "  ${CYAN}→${NC} $1"; }
 
+choose_model_interactive() {
+    echo ""
+    echo "Choose which model(s) to install:"
+    echo "  1) Gemma 3 1B  (~0.8 GB, fastest)"
+    echo "  2) Gemma 3 4B  (~2.5 GB, better quality)"
+    echo "  3) Both         (~3.3 GB total)"
+    read -r -p "Select 1, 2, or 3 [1]: " MODEL_CHOICE
+    MODEL_CHOICE="${MODEL_CHOICE:-1}"
+    case "$MODEL_CHOICE" in
+        1) MODEL="1b" ;;
+        2) MODEL="4b" ;;
+        3) MODEL="both" ;;
+        *) err "Invalid selection. Choose 1, 2, or 3." ;;
+    esac
+}
+
 print_banner() {
 echo -e "${BLUE}"
 cat << 'EOF'
@@ -43,19 +59,7 @@ done
 [[ -z "$DRIVE" ]] && err "USB drive path required. Example: --drive /media/user/MYUSB"
 
 if [[ -z "$MODEL" ]]; then
-        echo ""
-        echo "Choose which model(s) to install:"
-        echo "  1) Gemma 3 1B"
-        echo "  2) Gemma 3 4B"
-        echo "  3) Both"
-        read -r -p "Select 1, 2, or 3 [1]: " MODEL_CHOICE
-        MODEL_CHOICE="${MODEL_CHOICE:-1}"
-        case "$MODEL_CHOICE" in
-                1) MODEL="1b" ;;
-                2) MODEL="4b" ;;
-                3) MODEL="both" ;;
-                *) err "Invalid selection. Choose 1, 2, or 3." ;;
-        esac
+    choose_model_interactive
 fi
 
 [[ "$MODEL" != "1b" && "$MODEL" != "4b" && "$MODEL" != "both" ]] && err "Model must be '1b', '4b', or 'both'"
@@ -64,6 +68,10 @@ INSTALL_ROOT="$DRIVE/locali"
 
 print_banner
 echo -e "  ${BOLD}Linux/macOS Setup  |  Model: Gemma 3 ${MODEL}  |  Target: ${INSTALL_ROOT}${NC}\n"
+echo "This will download llama.cpp binaries and selected model(s) to your USB."
+read -r -p "Continue? [Y/n]: " CONFIRM
+CONFIRM="${CONFIRM:-Y}"
+[[ ! "$CONFIRM" =~ ^[Yy]$ ]] && err "Setup cancelled by user."
 
 # --- Detect OS ---
 OS="linux"

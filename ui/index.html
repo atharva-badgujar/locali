@@ -542,6 +542,8 @@
   const CHAT_API = '/api/chat';
 
   const history = [];
+  let conversationId = `chat-${Date.now()}`;
+  let savedConversations = [];
   let isGenerating = false;
   let serverReady = false;
   let availableModels = [];
@@ -568,7 +570,7 @@
         
         if (!serverReady) {
           serverReady = true;
-          loadMemory();
+          loadConversations();
         }
         updateSendButtonState();
         return true;
@@ -654,13 +656,13 @@
   }
 
   // ── Working memory and history ─────────────────────────
-  async function loadMemory() {
+  async function loadConversations() {
     try {
-      const r = await fetch('/api/memory');
+      const r = await fetch('/api/conversations');
       if (!r.ok) return;
       const j = await r.json();
-      const mem = j.memory || { conversations: [] };
-      renderHistoryList(mem.conversations || []);
+      savedConversations = j.conversations || [];
+      renderHistoryList(savedConversations);
     } catch (e) { /* ignore */ }
   }
 
@@ -673,20 +675,36 @@
     newBtn.textContent = 'New Chat';
     newBtn.onclick = () => { clearChat(); document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active')); newBtn.classList.add('active'); };
     list.appendChild(newBtn);
-    convos.slice().reverse().forEach((c, idx) => {
+    convos.forEach((c, idx) => {
       const el = document.createElement('div');
       el.className = 'history-item';
-      el.textContent = c.summary || (`Conversation ${idx+1}`);
+      el.textContent = c.title || (`Conversation ${idx+1}`);
       el.onclick = () => {
         document.querySelectorAll('.history-item').forEach(x => x.classList.remove('active'));
         el.classList.add('active');
         clearChat();
-        // show the conversation summary and reply
-        if (c.summary) addMessage('user', c.summary);
-        if (c.reply) addMessage('assistant', c.reply);
+        conversationId = c.id || `chat-${Date.now()}`;
+        (c.messages || []).forEach((m) => {
+          if (m.role === 'user' || m.role === 'assistant') {
+            history.push({ role: m.role, content: m.content });
+            addMessage(m.role, m.content);
+          }
+        });
       };
       list.appendChild(el);
     });
+  }
+
+  async function saveConversation() {
+    if (!history.length) return;
+    try {
+      await fetch('/api/conversations/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: conversationId, messages: history })
+      });
+      await loadConversations();
+    } catch (e) { /* ignore */ }
   }
 
   // ── Poll server stats and show in header ───────────────
@@ -795,6 +813,7 @@
 
   function clearChat() {
     history.length = 0;
+    conversationId = `chat-${Date.now()}`;
     chatEl.innerHTML = `
       <div class="welcome" id="welcome">
         <div class="welcome-icon">🧠</div>
@@ -858,7 +877,8 @@
       const decoder = new TextDecoder();
       let buffer = '';
 
-      while (true) {
+      let streamDone = false;
+      while (!streamDone) {
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -869,7 +889,10 @@
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6).trim();
-          if (data === '[DONE]') break;
+          if (data === '[DONE]') {
+            streamDone = true;
+            break;
+          }
           try {
             const json = JSON.parse(data);
             const chunk = json.choices?.[0]?.delta?.content || '';
@@ -881,8 +904,12 @@
           } catch {}
         }
       }
+      if (streamDone) {
+        try { await reader.cancel(); } catch {}
+      }
 
       history.push({ role: 'assistant', content: fullText });
+      await saveConversation();
 
     } catch (e) {
       removeThinking();

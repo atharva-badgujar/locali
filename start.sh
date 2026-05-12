@@ -31,11 +31,26 @@ else
     BINARY="$SCRIPT_DIR/bin/linux/llama-server"
 fi
 
+MODEL_FILE="gemma-3-1b-it-q4_k_m.gguf"
+PORT="8080"
+if command -v python3 &>/dev/null; then
+  while IFS='=' read -r k v; do
+    [[ "$k" == "model" ]] && MODEL_FILE="$v"
+    [[ "$k" == "port" ]] && PORT="$v"
+  done < <(python3 - <<'PY' "$SCRIPT_DIR/config.json"
+import json,sys
+cfg=json.load(open(sys.argv[1],encoding='utf-8'))
+print(f"model={cfg.get('model','gemma-3-1b-it-q4_k_m.gguf')}")
+print(f"port={cfg.get('port',8080)}")
+PY
+)
+fi
+
 chmod +x "$BINARY" 2>/dev/null
 "$BINARY" \
-    --model "$SCRIPT_DIR/models/gemma-3-1b-it-q4_k_m.gguf" \
+    --model "$SCRIPT_DIR/models/$MODEL_FILE" \
     --host 127.0.0.1 \
-    --port 8080 \
+    --port "$PORT" \
     --ctx-size 2048 \
     --threads 4 \
     --log-disable
